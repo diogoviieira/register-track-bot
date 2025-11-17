@@ -1,2 +1,0 @@
-# Test file to verify git authentication
-This file was created to test GitHub authentication.
