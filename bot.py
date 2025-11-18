@@ -30,6 +30,56 @@ CATEGORY, SUBCATEGORY, AMOUNT, DESCRIPTION, DATE_INPUT, EDIT_FIELD = range(6)
 EXCEL_FILE = "expenses.xlsx"
 LOCK_FILE = "expenses.xlsx.lock"
 
+# Excel column indices (0-indexed for reading)
+class ExcelColumns:
+    DATE = 0
+    TIME = 1
+    CATEGORY = 2
+    SUBCATEGORY = 3
+    AMOUNT = 4
+    DESCRIPTION = 5
+    
+    # For writing (1-indexed)
+    DATE_WRITE = 1
+    TIME_WRITE = 2
+    CATEGORY_WRITE = 3
+    SUBCATEGORY_WRITE = 4
+    AMOUNT_WRITE = 5
+    DESCRIPTION_WRITE = 6
+
+# Month mappings (English, Portuguese, and numbers)
+MONTH_MAPPINGS = {
+    'january': '01', 'janeiro': '01', '1': '01',
+    'february': '02', 'fevereiro': '02', '2': '02',
+    'march': '03', 'março': '03', 'marco': '03', '3': '03',
+    'april': '04', 'abril': '04', '4': '04',
+    'may': '05', 'maio': '05', '5': '05',
+    'june': '06', 'junho': '06', '6': '06',
+    'july': '07', 'julho': '07', '7': '07',
+    'august': '08', 'agosto': '08', '8': '08',
+    'september': '09', 'setembro': '09', '9': '09',
+    'october': '10', 'outubro': '10', '10': '10',
+    'november': '11', 'novembro': '11', '11': '11',
+    'december': '12', 'dezembro': '12', '12': '12'
+}
+
+MONTH_NAMES = {
+    '01': 'January', '02': 'February', '03': 'March',
+    '04': 'April', '05': 'May', '06': 'June',
+    '07': 'July', '08': 'August', '09': 'September',
+    '10': 'October', '11': 'November', '12': 'December'
+}
+
+# Validation constants
+MAX_AMOUNT = 999999
+
+# Common prompts
+DATE_FORMAT_PROMPT = (
+    "📅 Enter the date {action} (format: DD/MM/YY)\n\n"
+    "Example: 15/11/25\n"
+    "Or type /cancel to abort."
+)
+
 # Main categories
 CATEGORIES = [
     ["Home", "Car"],
@@ -108,6 +158,70 @@ def should_skip_description(category: str, subcategory: str) -> bool:
     return subcategory in auto_subs
 
 
+def get_today_date() -> str:
+    """Get today's date in YYYY-MM-DD format"""
+    return datetime.now().strftime("%Y-%m-%d")
+
+
+def get_file_lock(timeout=10):
+    """Get a file lock for Excel operations"""
+    return FileLock(LOCK_FILE, timeout=timeout)
+
+
+def format_success_message(category: str, subcategory: str, amount: float, description: str, target_date: str = None) -> str:
+    """Format a standardized success message for saved expenses"""
+    date_msg = f" for {target_date}" if target_date else ""
+    return (
+        f"✅ Expense saved successfully{date_msg}!\n\n"
+        f"📋 Category: {category}\n"
+        f"🏷️ Subcategory: {subcategory}\n"
+        f"💵 Amount: €{amount:.2f}\n"
+        f"📝 Description: {description}\n\n"
+        "Use /add to add another expense or /view to see today's expenses."
+    )
+
+
+async def handle_error(update: Update, error: Exception, operation: str, logger_instance=logger):
+    """Centralized error handling for operations"""
+    logger_instance.error(f"Error {operation}: {error}")
+    await update.message.reply_text(f"Error {operation}. Please try again.")
+
+
+def format_expense_line(row, values_only=True) -> str:
+    """Format a single expense line for display"""
+    if values_only:
+        # Row is tuple of values
+        return f"• {row[ExcelColumns.CATEGORY]} > {row[ExcelColumns.SUBCATEGORY]}: €{row[ExcelColumns.AMOUNT]:.2f} - {row[ExcelColumns.DESCRIPTION]}"
+    else:
+        # Row is openpyxl Row object with .value attributes
+        return f"• {row[ExcelColumns.CATEGORY].value} > {row[ExcelColumns.SUBCATEGORY].value}: €{row[ExcelColumns.AMOUNT].value:.2f} - {row[ExcelColumns.DESCRIPTION].value}"
+
+
+def format_expense_numbered(index: int, row) -> str:
+    """Format a numbered expense line for selection lists"""
+    return f"{index}. {row[ExcelColumns.CATEGORY].value} > {row[ExcelColumns.SUBCATEGORY].value}: €{row[ExcelColumns.AMOUNT].value:.2f} - {row[ExcelColumns.DESCRIPTION].value}"
+
+
+def get_expenses_for_date(target_date: str, lock: FileLock, values_only=True):
+    """Load expenses for a specific date with file locking"""
+    with lock:
+        wb = openpyxl.load_workbook(EXCEL_FILE)
+        ws = wb.active
+        
+        if values_only:
+            expenses = [
+                row for row in ws.iter_rows(min_row=2, values_only=True)
+                if row[ExcelColumns.DATE] == target_date
+            ]
+        else:
+            expenses = [
+                (idx, row) for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=False), start=2)
+                if row[ExcelColumns.DATE].value == target_date
+            ]
+        
+        return expenses
+
+
 def safe_save_workbook(wb):
     """Safely save workbook with transaction safety using temp file"""
     try:
@@ -145,7 +259,7 @@ def init_excel():
 
 def save_expense(category: str, subcategory: str, amount: float, description: str, custom_date: str = None):
     """Save expense to Excel file with optional custom date"""
-    lock = FileLock(LOCK_FILE, timeout=10)
+    lock = get_file_lock()
     try:
         with lock:
             wb = openpyxl.load_workbook(EXCEL_FILE)
@@ -275,7 +389,7 @@ async def amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             )
             return AMOUNT
         
-        if amount_value > 999999:
+        if amount_value > MAX_AMOUNT:
             await update.message.reply_text(
                 "❌ Amount too large! Please enter a reasonable amount:"
             )
@@ -292,14 +406,8 @@ async def amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             target_date = context.user_data.get("target_date")
             
             if save_expense(category, subcategory, amount_value, description, target_date):
-                date_msg = f" for {target_date}" if target_date else ""
                 await update.message.reply_text(
-                    f"✅ Expense saved successfully{date_msg}!\n\n"
-                    f"📋 Category: {category}\n"
-                    f"🏷️ Subcategory: {subcategory}\n"
-                    f"💵 Amount: €{amount_value:.2f}\n"
-                    f"📝 Description: {description}\n\n"
-                    "Use /add to add another expense or /view to see today's expenses."
+                    format_success_message(category, subcategory, amount_value, description, target_date)
                 )
             else:
                 await update.message.reply_text(
@@ -333,14 +441,8 @@ async def description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     target_date = context.user_data.get("target_date")
     
     if save_expense(category, subcategory, amount, description, target_date):
-        date_msg = f" for {target_date}" if target_date else ""
         await update.message.reply_text(
-            f"✅ Expense saved successfully{date_msg}!\n\n"
-            f"📋 Category: {category}\n"
-            f"🏷️ Subcategory: {subcategory}\n"
-            f"💵 Amount: €{amount:.2f}\n"
-            f"📝 Description: {description}\n\n"
-            "Use /add to add another expense or /view to see today's expenses."
+            format_success_message(category, subcategory, amount, description, target_date)
         )
     else:
         await update.message.reply_text(
@@ -353,89 +455,54 @@ async def description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 async def view_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """View today's expenses"""
-    lock = FileLock(LOCK_FILE, timeout=10)
+    lock = get_file_lock()
     try:
-        with lock:
-            wb = openpyxl.load_workbook(EXCEL_FILE)
-            ws = wb.active
+        today = get_today_date()
+        expenses = get_expenses_for_date(today, lock, values_only=True)
         
-        today = datetime.now().strftime("%Y-%m-%d")
-        expenses = []
-        total = 0.0
-        
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            if row[0] == today:
-                expenses.append(row)
-                total += float(row[4])  # Amount is now in column 4
-        
-            if expenses:
-                message = f"📊 Today's Expenses ({today}):\n\n"
-                for exp in expenses:
-                    message += f"• {exp[2]} > {exp[3]}: €{exp[4]:.2f} - {exp[5]}\n"
-                message += f"\n💰 Total: €{total:.2f}"
-            else:
-                message = "No expenses recorded for today."
+        if expenses:
+            total = sum(float(exp[ExcelColumns.AMOUNT]) for exp in expenses)
+            message = f"📊 Today's Expenses ({today}):\n\n"
+            for exp in expenses:
+                message += format_expense_line(exp) + "\n"
+            message += f"\n💰 Total: €{total:.2f}"
+        else:
+            message = "No expenses recorded for today."
         
         await update.message.reply_text(message)
     except Exception as e:
-        logger.error(f"Error viewing expenses: {e}")
-        await update.message.reply_text("Error retrieving expenses.")
-
-
+        await handle_error(update, e, "viewing expenses")
 async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Get expense summary by category"""
-    lock = FileLock(LOCK_FILE, timeout=10)
+    lock = get_file_lock()
     try:
-        with lock:
-            wb = openpyxl.load_workbook(EXCEL_FILE)
-            ws = wb.active
+        today = get_today_date()
+        expenses = get_expenses_for_date(today, lock, values_only=True)
         
-        today = datetime.now().strftime("%Y-%m-%d")
         category_totals = {}
+        for row in expenses:
+            category = row[ExcelColumns.CATEGORY]
+            subcategory = row[ExcelColumns.SUBCATEGORY]
+            amount = float(row[ExcelColumns.AMOUNT])
+            key = f"{category} > {subcategory}"
+            category_totals[key] = category_totals.get(key, 0) + amount
         
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            if row[0] == today:
-                category = row[2]
-                subcategory = row[3]
-                amount = float(row[4])
-                key = f"{category} > {subcategory}"
-                category_totals[key] = category_totals.get(key, 0) + amount
-        
-            if category_totals:
-                message = f"📈 Today's Summary ({today}):\n\n"
-                for cat, total in sorted(category_totals.items()):
-                    message += f"• {cat}: €{total:.2f}\n"
-                message += f"\n💰 Grand Total: €{sum(category_totals.values()):.2f}"
-            else:
-                message = "No expenses recorded for today."
+        if category_totals:
+            message = f"📈 Today's Summary ({today}):\n\n"
+            for cat, total in sorted(category_totals.items()):
+                message += f"• {cat}: €{total:.2f}\n"
+            message += f"\n💰 Grand Total: €{sum(category_totals.values()):.2f}"
+        else:
+            message = "No expenses recorded for today."
         
         await update.message.reply_text(message)
     except Exception as e:
-        logger.error(f"Error getting summary: {e}")
-        await update.message.reply_text("Error retrieving summary.")
-
-
+        await handle_error(update, e, "getting summary")
 async def view_month_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """View expenses for a specific month"""
     try:
         # Parse the command to get month name or number
         message_text = update.message.text.lower()
-        
-        # Month mapping (English and Portuguese)
-        months = {
-            'january': '01', 'janeiro': '01', '1': '01',
-            'february': '02', 'fevereiro': '02', '2': '02',
-            'march': '03', 'março': '03', 'marco': '03', '3': '03',
-            'april': '04', 'abril': '04', '4': '04',
-            'may': '05', 'maio': '05', '5': '05',
-            'june': '06', 'junho': '06', '6': '06',
-            'july': '07', 'julho': '07', '7': '07',
-            'august': '08', 'agosto': '08', '8': '08',
-            'september': '09', 'setembro': '09', '9': '09',
-            'october': '10', 'outubro': '10', '10': '10',
-            'november': '11', 'novembro': '11', '11': '11',
-            'december': '12', 'dezembro': '12', '12': '12'
-        }
         
         # Extract month from command (e.g., "/month november" or "/month 11")
         parts = message_text.split()
@@ -450,7 +517,7 @@ async def view_month_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
         
         month_input = parts[1]
-        month_num = months.get(month_input)
+        month_num = MONTH_MAPPINGS.get(month_input)
         
         if not month_num:
             await update.message.reply_text(
@@ -463,7 +530,7 @@ async def view_month_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE
         current_year = datetime.now().year
         
         # Load expenses
-        lock = FileLock(LOCK_FILE, timeout=10)
+        lock = get_file_lock()
         with lock:
             wb = openpyxl.load_workbook(EXCEL_FILE)
             ws = wb.active
@@ -473,24 +540,16 @@ async def view_month_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE
             category_totals = {}
             
             for row in ws.iter_rows(min_row=2, values_only=True):
-                if row[0] and row[0].startswith(f"{current_year}-{month_num}"):
+                if row[ExcelColumns.DATE] and row[ExcelColumns.DATE].startswith(f"{current_year}-{month_num}"):
                     expenses.append(row)
-                    total += float(row[4])
+                    total += float(row[ExcelColumns.AMOUNT])
                     
                     # Track category totals
-                    key = f"{row[2]} > {row[3]}"
-                    category_totals[key] = category_totals.get(key, 0) + float(row[4])
+                    key = f"{row[ExcelColumns.CATEGORY]} > {row[ExcelColumns.SUBCATEGORY]}"
+                    category_totals[key] = category_totals.get(key, 0) + float(row[ExcelColumns.AMOUNT])
         
         if expenses:
-            # Month names for display
-            month_names = {
-                '01': 'January', '02': 'February', '03': 'March',
-                '04': 'April', '05': 'May', '06': 'June',
-                '07': 'July', '08': 'August', '09': 'September',
-                '10': 'October', '11': 'November', '12': 'December'
-            }
-            
-            message = f"📊 Expenses for {month_names[month_num]} {current_year}:\n\n"
+            message = f"📊 Expenses for {MONTH_NAMES[month_num]} {current_year}:\n\n"
             message += f"📋 By Category:\n"
             for cat, cat_total in sorted(category_totals.items()):
                 message += f"  • {cat}: €{cat_total:.2f}\n"
@@ -504,49 +563,52 @@ async def view_month_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text(message)
         
     except Exception as e:
-        logger.error(f"Error viewing month expenses: {e}")
-        await update.message.reply_text("Error retrieving monthly expenses.")
+        await handle_error(update, e, "viewing month expenses")
+
+
+async def show_expenses_for_action(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    target_date: str,
+    action: str,
+    user_data_key: str
+):
+    """Generic function to show expenses for delete/edit actions"""
+    lock = get_file_lock()
+    try:
+        expenses = get_expenses_for_date(target_date, lock, values_only=False)
+        
+        if not expenses:
+            await update.message.reply_text(f"No expenses to {action} for {target_date}.")
+            return
+        
+        # Build message with appropriate emoji
+        emoji = {"delete": "🗑️", "edit": "✏️"}.get(action, "📋")
+        message = f"{emoji} Expenses for {target_date}:\n\n"
+        
+        for i, (row_idx, row) in enumerate(expenses, start=1):
+            message += format_expense_numbered(i, row) + "\n"
+        
+        message += f"\nReply with the number (1-{len(expenses)}) to {action}, or /cancel to abort."
+        
+        context.user_data[user_data_key] = expenses
+        await update.message.reply_text(message)
+        
+    except Exception as e:
+        await handle_error(update, e, f"showing expenses for {action}")
+        # Clean up on error
+        context.user_data.pop(user_data_key, None)
 
 
 async def delete_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show today's expenses and allow user to delete one"""
-    lock = FileLock(LOCK_FILE, timeout=10)
-    try:
-        with lock:
-            wb = openpyxl.load_workbook(EXCEL_FILE)
-            ws = wb.active
-            
-            today = datetime.now().strftime("%Y-%m-%d")
-            today_expenses = []
-            
-            # Collect today's expenses with their row numbers
-            for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=False), start=2):
-                if row[0].value == today:
-                    today_expenses.append((idx, row))
-        
-        if not today_expenses:
-            await update.message.reply_text("No expenses to delete for today.")
-            return
-        
-        # Display expenses with numbers
-        message = f"🗑️ Today's Expenses ({today}):\n\n"
-        for i, (row_idx, row) in enumerate(today_expenses, start=1):
-            message += f"{i}. {row[2].value} > {row[3].value}: €{row[4].value:.2f} - {row[5].value}\n"
-        message += f"\nReply with the number (1-{len(today_expenses)}) to delete, or /cancel to abort."
-        
-        context.user_data["delete_expenses"] = today_expenses
-        await update.message.reply_text(message)
-        
-    except Exception as e:
-        logger.error(f"Error in delete_expense: {e}")
-        await update.message.reply_text("Error retrieving expenses for deletion.")
-        # Clean up on error
-        context.user_data.pop("delete_expenses", None)
+    today = get_today_date()
+    await show_expenses_for_action(update, context, today, "delete", "delete_expenses")
 
 
 async def handle_delete_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the deletion of an expense by number"""
-    lock = FileLock(LOCK_FILE, timeout=10)
+    lock = get_file_lock()
     try:
         choice = int(update.message.text)
         expenses = context.user_data.get("delete_expenses", [])
@@ -572,10 +634,10 @@ async def handle_delete_number(update: Update, context: ContextTypes.DEFAULT_TYP
         # Show confirmation
         await update.message.reply_text(
             f"✅ Deleted expense:\n\n"
-            f"📋 Category: {row[2].value}\n"
-            f"🏷️ Subcategory: {row[3].value}\n"
-            f"💵 Amount: €{row[4].value:.2f}\n"
-            f"📝 Description: {row[5].value}\n\n"
+            f"📋 Category: {row[ExcelColumns.CATEGORY].value}\n"
+            f"🏷️ Subcategory: {row[ExcelColumns.SUBCATEGORY].value}\n"
+            f"💵 Amount: €{row[ExcelColumns.AMOUNT].value:.2f}\n"
+            f"📝 Description: {row[ExcelColumns.DESCRIPTION].value}\n\n"
             "Expense has been removed."
         )
         
@@ -584,8 +646,7 @@ async def handle_delete_number(update: Update, context: ContextTypes.DEFAULT_TYP
             "Please enter a valid number, or /cancel to abort."
         )
     except Exception as e:
-        logger.error(f"Error deleting expense: {e}")
-        await update.message.reply_text("Error deleting expense. Please try again.")
+        await handle_error(update, e, "deleting expense")
     finally:
         # Always clear the delete context
         context.user_data.pop("delete_expenses", None)
@@ -595,44 +656,14 @@ async def handle_delete_number(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def edit_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show today's expenses and allow user to edit one"""
-    lock = FileLock(LOCK_FILE, timeout=10)
-    try:
-        with lock:
-            wb = openpyxl.load_workbook(EXCEL_FILE)
-            ws = wb.active
-            
-            today = datetime.now().strftime("%Y-%m-%d")
-            today_expenses = []
-            
-            for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=False), start=2):
-                if row[0].value == today:
-                    today_expenses.append((idx, row))
-        
-        if not today_expenses:
-            await update.message.reply_text("No expenses to edit for today.")
-            return
-        
-        message = f"✏️ Today's Expenses ({today}):\n\n"
-        for i, (row_idx, row) in enumerate(today_expenses, start=1):
-            message += f"{i}. {row[2].value} > {row[3].value}: €{row[4].value:.2f} - {row[5].value}\n"
-        message += f"\nReply with the number (1-{len(today_expenses)}) to edit, or /cancel to abort."
-        
-        context.user_data["edit_expenses"] = today_expenses
-        await update.message.reply_text(message)
-        
-    except Exception as e:
-        logger.error(f"Error in edit_expense: {e}")
-        await update.message.reply_text("Error retrieving expenses for editing.")
-        # Clean up on error
-        context.user_data.pop("edit_expenses", None)
+    today = get_today_date()
+    await show_expenses_for_action(update, context, today, "edit", "edit_expenses")
 
 
 async def edit_expense_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Edit expense for a specific date"""
     await update.message.reply_text(
-        "📅 Enter the date to edit an expense (format: DD/MM/YY)\n\n"
-        "Example: 15/11/25\n"
-        "Or type /cancel to abort."
+        DATE_FORMAT_PROMPT.format(action="to edit an expense")
     )
     context.user_data["editing_for_date"] = True
     return DATE_INPUT
@@ -640,35 +671,7 @@ async def edit_expense_date(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 async def show_edit_for_date(update: Update, context: ContextTypes.DEFAULT_TYPE, target_date: str):
     """Show expenses for a specific date and allow editing"""
-    lock = FileLock(LOCK_FILE, timeout=10)
-    try:
-        with lock:
-            wb = openpyxl.load_workbook(EXCEL_FILE)
-            ws = wb.active
-            
-            date_expenses = []
-            
-            for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=False), start=2):
-                if row[0].value == target_date:
-                    date_expenses.append((idx, row))
-        
-        if not date_expenses:
-            await update.message.reply_text(f"No expenses to edit for {target_date}.")
-            return
-        
-        message = f"✏️ Expenses for {target_date}:\n\n"
-        for i, (row_idx, row) in enumerate(date_expenses, start=1):
-            message += f"{i}. {row[2].value} > {row[3].value}: €{row[4].value:.2f} - {row[5].value}\n"
-        message += f"\nReply with the number (1-{len(date_expenses)}) to edit, or /cancel to abort."
-        
-        context.user_data["edit_expenses"] = date_expenses
-        await update.message.reply_text(message)
-        
-    except Exception as e:
-        logger.error(f"Error in show_edit_for_date: {e}")
-        await update.message.reply_text("Error retrieving expenses for editing.")
-        # Clean up on error
-        context.user_data.pop("edit_expenses", None)
+    await show_expenses_for_action(update, context, target_date, "edit", "edit_expenses")
 
 
 async def handle_edit_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -687,20 +690,20 @@ async def handle_edit_number(update: Update, context: ContextTypes.DEFAULT_TYPE)
         row_idx, row = expenses[choice - 1]
         context.user_data["edit_row_idx"] = row_idx
         context.user_data["edit_expense_data"] = {
-            "category": row[2].value,
-            "subcategory": row[3].value,
-            "amount": row[4].value,
-            "description": row[5].value
+            "category": row[ExcelColumns.CATEGORY].value,
+            "subcategory": row[ExcelColumns.SUBCATEGORY].value,
+            "amount": row[ExcelColumns.AMOUNT].value,
+            "description": row[ExcelColumns.DESCRIPTION].value
         }
         context.user_data.pop("edit_expenses", None)
         
         # Show what can be edited
         await update.message.reply_text(
             f"✏️ Editing expense:\n\n"
-            f"📋 Category: {row[2].value}\n"
-            f"🏷️ Subcategory: {row[3].value}\n"
-            f"💵 Amount: €{row[4].value:.2f}\n"
-            f"📝 Description: {row[5].value}\n\n"
+            f"📋 Category: {row[ExcelColumns.CATEGORY].value}\n"
+            f"🏷️ Subcategory: {row[ExcelColumns.SUBCATEGORY].value}\n"
+            f"💵 Amount: €{row[ExcelColumns.AMOUNT].value:.2f}\n"
+            f"📝 Description: {row[ExcelColumns.DESCRIPTION].value}\n\n"
             "What would you like to edit?\n"
             "Reply with:\n"
             "• 'amount' - Change the amount\n"
@@ -713,8 +716,7 @@ async def handle_edit_number(update: Update, context: ContextTypes.DEFAULT_TYPE)
             "Please enter a valid number, or /cancel to abort."
         )
     except Exception as e:
-        logger.error(f"Error selecting expense for edit: {e}")
-        await update.message.reply_text("Error selecting expense. Please try again.")
+        await handle_error(update, e, "selecting expense for edit")
         # Clean up on error
         context.user_data.pop("edit_expenses", None)
         context.user_data.pop("edit_row_idx", None)
@@ -745,8 +747,7 @@ async def handle_edit_field_choice(update: Update, context: ContextTypes.DEFAULT
                 "Please reply with 'amount' or 'description', or /cancel to abort."
             )
     except Exception as e:
-        logger.error(f"Error in handle_edit_field_choice: {e}")
-        await update.message.reply_text("Error occurred. Please try again or /cancel.")
+        await handle_error(update, e, "handling edit field choice")
         # Clean up on error
         context.user_data.pop("edit_row_idx", None)
         context.user_data.pop("edit_expense_data", None)
@@ -755,7 +756,7 @@ async def handle_edit_field_choice(update: Update, context: ContextTypes.DEFAULT
 
 async def handle_edit_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the new value for the edited field"""
-    lock = FileLock(LOCK_FILE, timeout=10)
+    lock = get_file_lock()
     try:
         field = context.user_data.get("editing_field")
         new_value = update.message.text
@@ -776,7 +777,7 @@ async def handle_edit_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
             
-            if new_value > 999999:
+            if new_value > MAX_AMOUNT:
                 await update.message.reply_text(
                     "❌ Amount too large! Please enter a reasonable amount:"
                 )
@@ -789,10 +790,10 @@ async def handle_edit_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
             row_idx = context.user_data["edit_row_idx"]
             
             if field == "amount":
-                ws.cell(row=row_idx, column=5).value = new_value  # Column 5 is Amount
+                ws.cell(row=row_idx, column=ExcelColumns.AMOUNT_WRITE).value = new_value
                 context.user_data["edit_expense_data"]["amount"] = new_value
             elif field == "description":
-                ws.cell(row=row_idx, column=6).value = new_value  # Column 6 is Description
+                ws.cell(row=row_idx, column=ExcelColumns.DESCRIPTION_WRITE).value = new_value
                 context.user_data["edit_expense_data"]["description"] = new_value
             
             if not safe_save_workbook(wb):
@@ -813,8 +814,7 @@ async def handle_edit_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Please enter a valid number for the amount, or /cancel to abort."
         )
     except Exception as e:
-        logger.error(f"Error updating expense: {e}")
-        await update.message.reply_text("Error updating expense. Please try again.")
+        await handle_error(update, e, "updating expense")
     finally:
         # Always clear edit context
         context.user_data.pop("edit_row_idx", None)
@@ -837,9 +837,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def add_expense_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start adding an expense for a specific date"""
     await update.message.reply_text(
-        "📅 Enter the date for the expense (format: DD/MM/YY)\n\n"
-        "Example: 15/11/25\n"
-        "Or type /cancel to abort."
+        DATE_FORMAT_PROMPT.format(action="for the expense")
     )
     context.user_data["adding_for_date"] = True
     return DATE_INPUT
@@ -848,9 +846,7 @@ async def add_expense_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def view_expenses_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """View expenses for a specific date"""
     await update.message.reply_text(
-        "📅 Enter the date to view expenses (format: DD/MM/YY)\n\n"
-        "Example: 15/11/25\n"
-        "Or type /cancel to abort."
+        DATE_FORMAT_PROMPT.format(action="to view expenses")
     )
     context.user_data["viewing_date"] = True
     return DATE_INPUT
@@ -859,9 +855,7 @@ async def view_expenses_date(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def delete_expense_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Delete expense for a specific date"""
     await update.message.reply_text(
-        "📅 Enter the date to delete an expense (format: DD/MM/YY)\n\n"
-        "Example: 15/11/25\n"
-        "Or type /cancel to abort."
+        DATE_FORMAT_PROMPT.format(action="to delete an expense")
     )
     context.user_data["deleting_for_date"] = True
     return DATE_INPUT
@@ -916,65 +910,27 @@ async def handle_date_input(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 async def view_expenses_for_date(update: Update, context: ContextTypes.DEFAULT_TYPE, target_date: str):
     """View expenses for a specific date"""
-    lock = FileLock(LOCK_FILE, timeout=10)
+    lock = get_file_lock()
     try:
-        with lock:
-            wb = openpyxl.load_workbook(EXCEL_FILE)
-            ws = wb.active
-        
-            expenses = []
-            total = 0.0
-            
-            for row in ws.iter_rows(min_row=2, values_only=True):
-                if row[0] == target_date:
-                    expenses.append(row)
-                    total += float(row[4])
+        expenses = get_expenses_for_date(target_date, lock, values_only=True)
         
         if expenses:
+            total = sum(float(exp[ExcelColumns.AMOUNT]) for exp in expenses)
             message = f"📊 Expenses for {target_date}:\n\n"
             for exp in expenses:
-                message += f"• {exp[2]} > {exp[3]}: €{exp[4]:.2f} - {exp[5]}\n"
+                message += format_expense_line(exp) + "\n"
             message += f"\n💰 Total: €{total:.2f}"
         else:
             message = f"No expenses recorded for {target_date}."
         
         await update.message.reply_text(message)
     except Exception as e:
-        logger.error(f"Error viewing expenses for date: {e}")
-        await update.message.reply_text("Error retrieving expenses.")
+        await handle_error(update, e, "viewing expenses for date")
 
 
 async def show_delete_for_date(update: Update, context: ContextTypes.DEFAULT_TYPE, target_date: str):
     """Show expenses for a specific date and allow deletion"""
-    lock = FileLock(LOCK_FILE, timeout=10)
-    try:
-        with lock:
-            wb = openpyxl.load_workbook(EXCEL_FILE)
-            ws = wb.active
-            
-            date_expenses = []
-            
-            for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=False), start=2):
-                if row[0].value == target_date:
-                    date_expenses.append((idx, row))
-        
-        if not date_expenses:
-            await update.message.reply_text(f"No expenses to delete for {target_date}.")
-            return
-        
-        message = f"🗑️ Expenses for {target_date}:\n\n"
-        for i, (row_idx, row) in enumerate(date_expenses, start=1):
-            message += f"{i}. {row[2].value} > {row[3].value}: €{row[4].value:.2f} - {row[5].value}\n"
-        message += f"\nReply with the number (1-{len(date_expenses)}) to delete, or /cancel to abort."
-        
-        context.user_data["delete_expenses"] = date_expenses
-        await update.message.reply_text(message)
-        
-    except Exception as e:
-        logger.error(f"Error in show_delete_for_date: {e}")
-        await update.message.reply_text("Error retrieving expenses for deletion.")
-        # Clean up on error
-        context.user_data.pop("delete_expenses", None)
+    await show_expenses_for_action(update, context, target_date, "delete", "delete_expenses")
 
 
 def main():
