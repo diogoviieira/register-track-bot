@@ -20,18 +20,66 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Conversation states
-CATEGORY, AMOUNT, DESCRIPTION = range(3)
+CATEGORY, SUBCATEGORY, AMOUNT, DESCRIPTION = range(4)
 
 # Excel file path
 EXCEL_FILE = "expenses.xlsx"
 
-# Expense categories
+# Main categories
 CATEGORIES = [
-    ["Food", "Transport"],
-    ["Shopping", "Bills"],
-    ["Entertainment", "Health"],
-    ["Other"]
+    ["Home", "Car"],
+    ["Lazer", "Travel"],
+    ["Needs", "Health"],
+    ["Streaming", "Subscriptions"],
+    ["Others"]
 ]
+
+# Subcategories for each main category
+SUBCATEGORIES = {
+    "Home": [
+        ["Rent", "Light"],
+        ["Water", "Net"],
+        ["Me Mimei", "Other"]
+    ],
+    "Car": [
+        ["Fuel", "Insurance"],
+        ["Maintenance", "Parking"],
+        ["Via Verde", "Other"]
+    ],
+    "Lazer": [
+        ["Entertainment", "Dining Out"],
+        ["Movies/Shows", "Hobbies"],
+        ["Sports", "Other"]
+    ],
+    "Travel": [
+        ["Flights", "Hotels"],
+        ["Transportation", "Food"],
+        ["Activities", "Other"]
+    ],
+    "Streaming": [
+        ["Prime", "Netflix"],
+        ["Disney+", "HBO"]
+    ],
+    "Subscriptions": [
+        ["Patreon", "iCloud"],
+        ["Spotify", "F1 TV"],
+        ["Telemóvel"]
+    ],
+    "Needs": [
+        ["Groceries", "Clothing"],
+        ["Personal Care", "Setup"],
+        ["Other"]
+    ],
+    "Health": [
+        ["Doctor", "Pharmacy"],
+        ["Hospital", "Gym"],
+        ["Supplements", "Other"]
+    ],
+    "Others": [
+        ["Gifts", "Pet"],
+        ["Mi Mimei", "Others"]
+    ]
+}
 
 
 def init_excel():
@@ -40,12 +88,12 @@ def init_excel():
         wb = Workbook()
         ws = wb.active
         ws.title = "Expenses"
-        ws.append(["Date", "Time", "Category", "Amount", "Description"])
+        ws.append(["Date", "Time", "Category", "Subcategory", "Amount", "Description"])
         wb.save(EXCEL_FILE)
         logger.info(f"Created new Excel file: {EXCEL_FILE}")
 
 
-def save_expense(category: str, amount: float, description: str):
+def save_expense(category: str, subcategory: str, amount: float, description: str):
     """Save expense to Excel file"""
     try:
         wb = openpyxl.load_workbook(EXCEL_FILE)
@@ -55,9 +103,9 @@ def save_expense(category: str, amount: float, description: str):
         date_str = now.strftime("%Y-%m-%d")
         time_str = now.strftime("%H:%M:%S")
         
-        ws.append([date_str, time_str, category, amount, description])
+        ws.append([date_str, time_str, category, subcategory, amount, description])
         wb.save(EXCEL_FILE)
-        logger.info(f"Saved expense: {category} - ${amount}")
+        logger.info(f"Saved expense: {category} > {subcategory} - ${amount}")
         return True
     except Exception as e:
         logger.error(f"Error saving expense: {e}")
@@ -91,10 +139,34 @@ async def add_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 
 async def category(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Store category and ask for amount"""
-    context.user_data["category"] = update.message.text
+    """Store category and ask for subcategory"""
+    selected_category = update.message.text
+    context.user_data["category"] = selected_category
+    
+    # Get subcategories for the selected category
+    if selected_category in SUBCATEGORIES:
+        subcats = SUBCATEGORIES[selected_category]
+        await update.message.reply_text(
+            f"Category: {selected_category}\n\n"
+            "Please select a subcategory:",
+            reply_markup=ReplyKeyboardMarkup(subcats, one_time_keyboard=True),
+        )
+        return SUBCATEGORY
+    else:
+        # If no subcategories defined, skip to amount
+        await update.message.reply_text(
+            f"Category: {selected_category}\n\n"
+            "Now, enter the amount (numbers only):",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return AMOUNT
+
+
+async def subcategory(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Store subcategory and ask for amount"""
+    context.user_data["subcategory"] = update.message.text
     await update.message.reply_text(
-        f"Category: {update.message.text}\n\n"
+        f"Subcategory: {update.message.text}\n\n"
         "Now, enter the amount (numbers only):",
         reply_markup=ReplyKeyboardRemove(),
     )
@@ -123,13 +195,15 @@ async def description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     context.user_data["description"] = update.message.text
     
     category = context.user_data["category"]
+    subcategory = context.user_data.get("subcategory", "N/A")
     amount = context.user_data["amount"]
     description = update.message.text
     
-    if save_expense(category, amount, description):
+    if save_expense(category, subcategory, amount, description):
         await update.message.reply_text(
             "✅ Expense saved successfully!\n\n"
             f"📋 Category: {category}\n"
+            f"🏷️ Subcategory: {subcategory}\n"
             f"💵 Amount: ${amount:.2f}\n"
             f"📝 Description: {description}\n\n"
             "Use /add to add another expense or /view to see today's expenses."
@@ -155,12 +229,12 @@ async def view_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for row in ws.iter_rows(min_row=2, values_only=True):
             if row[0] == today:
                 expenses.append(row)
-                total += float(row[3])
+                total += float(row[4])  # Amount is now in column 4
         
         if expenses:
             message = f"📊 Today's Expenses ({today}):\n\n"
             for exp in expenses:
-                message += f"• {exp[2]}: ${exp[3]:.2f} - {exp[4]}\n"
+                message += f"• {exp[2]} > {exp[3]}: ${exp[4]:.2f} - {exp[5]}\n"
             message += f"\n💰 Total: ${total:.2f}"
         else:
             message = "No expenses recorded for today."
@@ -183,8 +257,10 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for row in ws.iter_rows(min_row=2, values_only=True):
             if row[0] == today:
                 category = row[2]
-                amount = float(row[3])
-                category_totals[category] = category_totals.get(category, 0) + amount
+                subcategory = row[3]
+                amount = float(row[4])
+                key = f"{category} > {subcategory}"
+                category_totals[key] = category_totals.get(key, 0) + amount
         
         if category_totals:
             message = f"📈 Today's Summary ({today}):\n\n"
@@ -239,6 +315,7 @@ def main():
         ],
         states={
             CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, category)],
+            SUBCATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, subcategory)],
             AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, amount)],
             DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, description)],
         },
