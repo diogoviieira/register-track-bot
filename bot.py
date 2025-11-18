@@ -136,12 +136,13 @@ def save_expense(category: str, subcategory: str, amount: float, description: st
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start the conversation and ask for expense category"""
     await update.message.reply_text(
-        "Hi! I'm your Expense Tracker Bot. 📊\n\n"
-        "I'll help you track your daily expenses.\n\n"
+        "Hi! I'm your Daddy, i will register your money moves. 📊\n\n"
+        "I'll help you not wasting all your money on Putas e Vinho verde.\n\n"
         "Commands:\n"
         "/add - Add a new expense\n"
         "/view - View today's expenses\n"
         "/summary - Get expense summary\n"
+        "/delete - Delete an expense\n"
         "/cancel - Cancel current operation\n\n"
         "Let's add an expense! Please select a category:",
         reply_markup=ReplyKeyboardMarkup(CATEGORIES, one_time_keyboard=True),
@@ -329,6 +330,81 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Error retrieving summary.")
 
 
+async def delete_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show today's expenses and allow user to delete one"""
+    try:
+        wb = openpyxl.load_workbook(EXCEL_FILE)
+        ws = wb.active
+        
+        today = datetime.now().strftime("%Y-%m-%d")
+        today_expenses = []
+        
+        # Collect today's expenses with their row numbers
+        for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=False), start=2):
+            if row[0].value == today:
+                today_expenses.append((idx, row))
+        
+        if not today_expenses:
+            await update.message.reply_text("No expenses to delete for today.")
+            return
+        
+        # Display expenses with numbers
+        message = f"🗑️ Today's Expenses ({today}):\n\n"
+        for i, (row_idx, row) in enumerate(today_expenses, start=1):
+            message += f"{i}. {row[2].value} > {row[3].value}: €{row[4].value:.2f} - {row[5].value}\n"
+        message += f"\nReply with the number (1-{len(today_expenses)}) to delete, or /cancel to abort."
+        
+        context.user_data["delete_expenses"] = today_expenses
+        await update.message.reply_text(message)
+        
+    except Exception as e:
+        logger.error(f"Error in delete_expense: {e}")
+        await update.message.reply_text("Error retrieving expenses for deletion.")
+
+
+async def handle_delete_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the deletion of an expense by number"""
+    try:
+        choice = int(update.message.text)
+        expenses = context.user_data.get("delete_expenses", [])
+        
+        if not expenses or choice < 1 or choice > len(expenses):
+            await update.message.reply_text(
+                f"Invalid choice. Please enter a number between 1 and {len(expenses)}, or /cancel."
+            )
+            return
+        
+        # Get the row to delete
+        row_idx, row = expenses[choice - 1]
+        
+        # Load workbook and delete the row
+        wb = openpyxl.load_workbook(EXCEL_FILE)
+        ws = wb.active
+        ws.delete_rows(row_idx)
+        wb.save(EXCEL_FILE)
+        
+        # Show confirmation
+        await update.message.reply_text(
+            f"✅ Deleted expense:\n\n"
+            f"📋 Category: {row[2].value}\n"
+            f"🏷️ Subcategory: {row[3].value}\n"
+            f"💵 Amount: €{row[4].value:.2f}\n"
+            f"📝 Description: {row[5].value}\n\n"
+            "Expense has been removed."
+        )
+        
+        # Clear the delete context
+        context.user_data.pop("delete_expenses", None)
+        
+    except ValueError:
+        await update.message.reply_text(
+            "Please enter a valid number, or /cancel to abort."
+        )
+    except Exception as e:
+        logger.error(f"Error deleting expense: {e}")
+        await update.message.reply_text("Error deleting expense. Please try again.")
+
+
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel the conversation"""
     await update.message.reply_text(
@@ -378,6 +454,13 @@ def main():
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler("view", view_expenses))
     application.add_handler(CommandHandler("summary", summary))
+    application.add_handler(CommandHandler("delete", delete_expense))
+    
+    # Handler for delete number input (when user is in delete mode)
+    application.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND & filters.Regex(r'^\d+$'),
+        handle_delete_number
+    ))
     
     # Start the bot
     print("Bot is running... Press Ctrl+C to stop.")
