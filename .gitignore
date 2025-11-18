@@ -25,6 +25,9 @@ wheels/
 
 #files
 Commands.md
+VERIFICATION_REPORT.md
+CODE_REVIEW.md
+test_critical_fixes.py
 
 # Excel files
 expenses.xlsx
