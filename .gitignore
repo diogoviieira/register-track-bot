@@ -23,6 +23,9 @@ wheels/
 .installed.cfg
 *.egg
 
+#files
+Commands.md
+
 # Excel files
 expenses.xlsx
 *.xlsx

@@ -49,7 +49,7 @@ SUBCATEGORIES = {
     "Lazer": [
         ["Entertainment", "Dining Out"],
         ["Movies/Shows", "Hobbies"],
-        ["Sports", "Other"]
+        ["Coffees", "Other"]
     ],
     "Travel": [
         ["Flights", "Hotels"],
@@ -77,9 +77,30 @@ SUBCATEGORIES = {
     ],
     "Others": [
         ["Gifts", "Pet"],
-        ["Mi Mimei", "Others"]
+        ["Mi Mimei", "Other"]
     ]
 }
+
+# Categories/subcategories that don't need description input
+# Description will be auto-filled as "Category - Subcategory"
+AUTO_DESCRIPTION = {
+    "Home": ["Rent", "Light", "Water", "Net"],
+    "Car": ["Fuel", "Insurance", "Via Verde"],
+    "Streaming": "all",  # All subcategories in Streaming
+    "Subscriptions": "all"  # All subcategories in Subscriptions
+}
+
+
+def should_skip_description(category: str, subcategory: str) -> bool:
+    """Check if description should be auto-filled for this category/subcategory"""
+    if category not in AUTO_DESCRIPTION:
+        return False
+    
+    auto_subs = AUTO_DESCRIPTION[category]
+    if auto_subs == "all":
+        return True
+    
+    return subcategory in auto_subs
 
 
 def init_excel():
@@ -105,7 +126,7 @@ def save_expense(category: str, subcategory: str, amount: float, description: st
         
         ws.append([date_str, time_str, category, subcategory, amount, description])
         wb.save(EXCEL_FILE)
-        logger.info(f"Saved expense: {category} > {subcategory} - ${amount}")
+        logger.info(f"Saved expense: {category} > {subcategory} - €{amount}")
         return True
     except Exception as e:
         logger.error(f"Error saving expense: {e}")
@@ -164,9 +185,16 @@ async def category(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def subcategory(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Store subcategory and ask for amount"""
-    context.user_data["subcategory"] = update.message.text
+    selected_subcategory = update.message.text
+    context.user_data["subcategory"] = selected_subcategory
+    
+    # Check if this category/subcategory should skip description
+    category = context.user_data["category"]
+    if should_skip_description(category, selected_subcategory):
+        context.user_data["skip_description"] = True
+    
     await update.message.reply_text(
-        f"Subcategory: {update.message.text}\n\n"
+        f"Subcategory: {selected_subcategory}\n\n"
         "Now, enter the amount (numbers only):",
         reply_markup=ReplyKeyboardRemove(),
     )
@@ -174,15 +202,40 @@ async def subcategory(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 
 async def amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Store amount and ask for description"""
+    """Store amount and ask for description (or auto-save if description not needed)"""
     try:
         amount_value = float(update.message.text)
         context.user_data["amount"] = amount_value
-        await update.message.reply_text(
-            f"Amount: ${amount_value:.2f}\n\n"
-            "Please provide a brief description:"
-        )
-        return DESCRIPTION
+        
+        # Check if we should skip description
+        if context.user_data.get("skip_description", False):
+            # Auto-fill description and save directly
+            category = context.user_data["category"]
+            subcategory = context.user_data.get("subcategory", "N/A")
+            description = f"{category} - {subcategory}"
+            
+            if save_expense(category, subcategory, amount_value, description):
+                await update.message.reply_text(
+                    "✅ Expense saved successfully!\n\n"
+                    f"📋 Category: {category}\n"
+                    f"🏷️ Subcategory: {subcategory}\n"
+                    f"💵 Amount: €{amount_value:.2f}\n"
+                    f"📝 Description: {description}\n\n"
+                    "Use /add to add another expense or /view to see today's expenses."
+                )
+            else:
+                await update.message.reply_text(
+                    "❌ Sorry, there was an error saving your expense. Please try again."
+                )
+            
+            return ConversationHandler.END
+        else:
+            # Ask for description as usual
+            await update.message.reply_text(
+                f"Amount: €{amount_value:.2f}\n\n"
+                "Please provide a brief description:"
+            )
+            return DESCRIPTION
     except ValueError:
         await update.message.reply_text(
             "Please enter a valid number for the amount:"
@@ -204,7 +257,7 @@ async def description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             "✅ Expense saved successfully!\n\n"
             f"📋 Category: {category}\n"
             f"🏷️ Subcategory: {subcategory}\n"
-            f"💵 Amount: ${amount:.2f}\n"
+            f"💵 Amount: €{amount:.2f}\n"
             f"📝 Description: {description}\n\n"
             "Use /add to add another expense or /view to see today's expenses."
         )
@@ -234,8 +287,8 @@ async def view_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if expenses:
             message = f"📊 Today's Expenses ({today}):\n\n"
             for exp in expenses:
-                message += f"• {exp[2]} > {exp[3]}: ${exp[4]:.2f} - {exp[5]}\n"
-            message += f"\n💰 Total: ${total:.2f}"
+                message += f"• {exp[2]} > {exp[3]}: €{exp[4]:.2f} - {exp[5]}\n"
+            message += f"\n💰 Total: €{total:.2f}"
         else:
             message = "No expenses recorded for today."
         
@@ -265,8 +318,8 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if category_totals:
             message = f"📈 Today's Summary ({today}):\n\n"
             for cat, total in sorted(category_totals.items()):
-                message += f"• {cat}: ${total:.2f}\n"
-            message += f"\n💰 Grand Total: ${sum(category_totals.values()):.2f}"
+                message += f"• {cat}: €{total:.2f}\n"
+            message += f"\n💰 Grand Total: €{sum(category_totals.values()):.2f}"
         else:
             message = "No expenses recorded for today."
         
