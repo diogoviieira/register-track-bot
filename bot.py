@@ -925,29 +925,33 @@ def main():
     application.add_handler(CommandHandler("edit", edit_expense))
     application.add_handler(CommandHandler("delete", delete_expense))
     
-    # Handler for edit/delete number input and edit field choices
-    application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND & filters.Regex(r'^\d+$'),
-        lambda update, context: (
-            handle_edit_number(update, context) if context.user_data.get("edit_expenses")
-            else handle_delete_number(update, context)
-        )
-    ))
+    # Combined handler for all non-conversation text input
+    async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        text = update.message.text.strip()
+        
+        # Priority 1: Editing field value
+        if context.user_data.get("editing_field"):
+            await handle_edit_value(update, context)
+            return
+        
+        # Priority 2: Selecting what field to edit
+        if context.user_data.get("edit_expense_data") and text.lower() in ["amount", "description"]:
+            await handle_edit_field_choice(update, context)
+            return
+        
+        # Priority 3: Selecting expense number to edit
+        if context.user_data.get("edit_expenses") and text.isdigit():
+            await handle_edit_number(update, context)
+            return
+        
+        # Priority 4: Selecting expense number to delete
+        if context.user_data.get("delete_expenses") and text.isdigit():
+            await handle_delete_number(update, context)
+            return
     
-    # Handler for edit field selection (amount/description)
-    application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND & filters.Regex(r'^(amount|description)$'),
-        handle_edit_field_choice
-    ))
-    
-    # Handler for new values when editing
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND,
-        lambda update, context: (
-            handle_edit_value(update, context) if context.user_data.get("editing_field")
-            else None
-        ),
-        block=False
+        handle_text_input
     ))
     
     # Start the bot
