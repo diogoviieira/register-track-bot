@@ -136,23 +136,36 @@ def save_expense(category: str, subcategory: str, amount: float, description: st
         return False
 
 
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show help message with all available commands"""
+    await update.message.reply_text(
+        "📋 **Available Commands:**\n\n"
+        "** Today's Expenses **\n"
+        "/add - Add expense for today\n"
+        "/view - View today's expenses\n"
+        "/summary - Get today's summary\n"
+        "/edit - Edit an expense from today\n"
+        "/delete - Delete today's expense\n\n"
+        "** Specific Date Operations **\n"
+        "/add_d - Add expense for a specific date\n"
+        "/view_d - View expenses for a specific date\n"
+        "/edit_d - Edit expense from a specific date\n"
+        "/delete_d - Delete expense from a specific date\n\n"
+        "** Monthly Overview **\n"
+        "/month <name> - View expenses for a month\n"
+        "Example: /month november or /month 11\n\n"
+        "** Other **\n"
+        "/help - Show this help message\n"
+        "/cancel - Cancel current operation"
+    )
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start the conversation and ask for expense category"""
     await update.message.reply_text(
         "Hi! I'm your Daddy, i will register your money moves. 📊\n\n"
         "I'll help you not wasting all your money on Putas e Vinho verde.\n\n"
-        "Commands:\n"
-        "/add - Add expense for today\n"
-        "/add_d - Add expense for a specific date\n"
-        "/view - View today's expenses\n"
-        "/view_d - View expenses for a specific date\n"
-        "/month - View expenses for a specific month\n"
-        "/summary - Get today's summary\n"
-        "/edit - Edit an expense from today\n"
-        "/edit_d - Edit an expense from a specific date\n"
-        "/delete - Delete today's expense\n"
-        "/delete_d - Delete expense from a specific date\n"
-        "/cancel - Cancel current operation\n\n"
+        "Use /help to see all available commands.\n\n"
         "Let's add an expense! Please select a category:",
         reply_markup=ReplyKeyboardMarkup(CATEGORIES, one_time_keyboard=True),
     )
@@ -953,6 +966,18 @@ def main():
         filters.TEXT & ~filters.COMMAND,
         handle_text_input
     ))
+    
+    # Handle unknown commands
+    async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text(
+            "Burro, you can use /help to get a list of all the available commands !"
+        )
+    
+    # Help command handler
+    application.add_handler(CommandHandler("help", help_command))
+    
+    # Unknown command handler - must be last
+    application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
     
     # Start the bot
     print("Bot is running... Press Ctrl+C to stop.")
