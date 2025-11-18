@@ -15,8 +15,8 @@ Thank you for your interest in contributing! 🎉
 
 ```bash
 # Clone your fork
-git clone https://github.com/YOUR-USERNAME/expense-tracker-bot.git
-cd expense-tracker-bot
+git clone 
+cd
 
 # Install dependencies
 pip install -r requirements.txt
