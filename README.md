@@ -26,17 +26,28 @@ cd register-track-bot
 
 # Set up virtual environment (recommended)
 python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+source .venv/bin/activate  # Linux/Mac
+# Windows PowerShell: .venv\Scripts\Activate.ps1
+# Windows CMD: .venv\Scripts\activate.bat
 
 # Install dependencies
 pip install -r requirements.txt
 
 # Set your bot token
-export TELEGRAM_BOT_TOKEN="your_bot_token_here"
+export TELEGRAM_BOT_TOKEN="your_bot_token_here"  # Linux/Mac
+# Windows: $env:TELEGRAM_BOT_TOKEN="your_bot_token_here"
 
 # Run the bot
 python run_bot.py
+
+# Or without activating venv (use full path):
+# .venv/Scripts/python run_bot.py  (Windows)
+# .venv/bin/python run_bot.py      (Linux/Mac)
 ```
+
+> **Windows Note**: If you get "running scripts is disabled", either:
+> - Use full path: `.venv\Scripts\python.exe run_bot.py`
+> - Or enable scripts once: `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`
 
 ## 📁 Project Structure
 
