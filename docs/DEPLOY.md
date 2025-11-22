@@ -1,32 +1,59 @@
-# Raspberry Pi Deployment Guide
+# 🚀 Deployment Guide
+
+Complete guide for deploying the Telegram Finance Tracker Bot on Raspberry Pi for 24/7 operation.
 
 ## Prerequisites
-- Raspberry Pi with Raspberry Pi OS installed
-- Internet connection
-- SSH access to your Raspberry Pi
-- Telegram Bot Token from @BotFather
 
-## Step 1: Initial Setup
+- Raspberry Pi (any model with network connectivity)
+- Raspberry Pi OS (formerly Raspbian)
+- SSH access or direct terminal access
+- Telegram Bot Token from [@BotFather](https://t.me/botfather)
+- Basic command line knowledge
 
-SSH into your Raspberry Pi:
+## Quick Deploy
+
 ```bash
-ssh pi@your-pi-ip-address
+# 1. Clone repository
+cd ~
+git clone https://github.com/diogoviieira/register-track-bot.git
+cd register-track-bot
+
+# 2. Install dependencies
+pip3 install -r requirements.txt
+
+# 3. Configure service
+sudo nano config/register-bot.service
+# Replace 'your_token_here' with your actual token
+
+# 4. Install and start service
+sudo cp config/register-bot.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable register-bot.service
+sudo systemctl start register-bot.service
+
+# 5. Verify it's running
+sudo systemctl status register-bot.service
 ```
 
-Update system packages:
+Done! Your bot is now running 24/7.
+
+## Detailed Setup
+
+### Step 1: System Preparation
+
+Update your system:
 ```bash
-sudo apt update
-sudo apt upgrade -y
+sudo apt update && sudo apt upgrade -y
 ```
 
-Install Python 3 and pip (if not already installed):
+Install required packages:
 ```bash
 sudo apt install python3 python3-pip git -y
 ```
 
-## Step 2: Clone and Setup Bot
+### Step 2: Get the Code
 
-Navigate to home directory and clone the repository:
+Clone the repository:
 ```bash
 cd ~
 git clone https://github.com/diogoviieira/register-track-bot.git
@@ -38,56 +65,56 @@ Install Python dependencies:
 pip3 install -r requirements.txt
 ```
 
-The project structure:
-```
-register-track-bot/
-├── src/bot.py              # Main bot code
-├── utils/                  # Database management tools
-├── data/                   # Database storage (auto-created)
-├── config/                 # Configuration files
-├── run_bot.py              # Bot launcher
-└── requirements.txt
-```
+### Step 3: Get Your Bot Token
 
-## Step 3: Configure Bot Token
+1. Open Telegram and search for [@BotFather](https://t.me/botfather)
+2. Send `/newbot` command
+3. Follow the prompts to create your bot
+4. Copy the API token provided
 
-Set your Telegram bot token as an environment variable:
-```bash
-# Temporary (for testing)
-export TELEGRAM_BOT_TOKEN="your_bot_token_here"
+### Step 4: Configure the Service
 
-# Or edit the service file (for permanent setup - see Step 4)
-```
-
-## Step 4: Test the Bot
-
-Test run the bot to make sure everything works:
-```bash
-python3 run_bot.py
-```
-
-If you see "Bot is running... Press Ctrl+C to stop.", the bot is working correctly. Test it in Telegram, then press Ctrl+C to stop.
-
-## Step 5: Setup Systemd Service (24/7 Operation)
-
-Edit the service file to add your bot token:
+Edit the service file:
 ```bash
 nano config/register-bot.service
 ```
 
-Replace `your_token_here` with your actual Telegram bot token, then save and exit (Ctrl+X, Y, Enter).
+Update the `Environment` line with your token:
+```ini
+Environment="TELEGRAM_BOT_TOKEN=your_actual_token_here"
+```
 
-Copy service file to systemd directory:
+Save and exit (`Ctrl+X`, then `Y`, then `Enter`).
+
+### Step 5: Test Before Installing
+
+Run the bot manually to verify everything works:
+```bash
+export TELEGRAM_BOT_TOKEN="your_actual_token_here"
+python3 run_bot.py
+```
+
+You should see:
+```
+Database initialized: /home/pi/register-track-bot/data/finance_tracker.db
+Bot is running... Press Ctrl+C to stop.
+```
+
+Test in Telegram by sending `/start` to your bot. If it responds, press `Ctrl+C` to stop.
+
+### Step 6: Install as System Service
+
+Copy service file:
 ```bash
 sudo cp config/register-bot.service /etc/systemd/system/
 ```
 
-Reload systemd to recognize the new service:
+Reload systemd:
 ```bash
 sudo systemctl daemon-reload
 ```
 
-Enable the service to start on boot:
+Enable auto-start on boot:
 ```bash
 sudo systemctl enable register-bot.service
 ```
@@ -97,174 +124,236 @@ Start the service:
 sudo systemctl start register-bot.service
 ```
 
-## Step 6: Verify Service Status
+### Step 7: Verify Installation
 
-Check if the service is running:
+Check status:
 ```bash
 sudo systemctl status register-bot.service
 ```
 
-You should see "active (running)" in green.
+You should see `active (running)` in green.
 
-View live logs:
+View logs:
 ```bash
 sudo journalctl -u register-bot.service -f
 ```
 
-Press Ctrl+C to exit log view.
+Press `Ctrl+C` to exit log view.
 
-## Managing the Bot Service
+## Service Management
 
-### Start the bot:
+### Common Commands
+
 ```bash
+# Start the bot
 sudo systemctl start register-bot.service
-```
 
-### Stop the bot:
-```bash
+# Stop the bot
 sudo systemctl stop register-bot.service
-```
 
-### Restart the bot:
-```bash
+# Restart the bot
 sudo systemctl restart register-bot.service
-```
 
-### View logs:
-```bash
-# Last 50 lines
+# Check status
+sudo systemctl status register-bot.service
+
+# View logs (live)
+sudo journalctl -u register-bot.service -f
+
+# View last 50 log entries
 sudo journalctl -u register-bot.service -n 50
 
-# Follow live logs
-sudo journalctl -u register-bot.service -f
-
-# Logs from today
-sudo journalctl -u register-bot.service --since today
-```
-
-### Disable auto-start on boot:
-```bash
+# Disable auto-start
 sudo systemctl disable register-bot.service
 ```
 
 ## Database Management
 
-The bot uses SQLite database stored in `data/finance_tracker.db`.
+### Location
 
-### View database with utilities:
+Database file: `~/register-track-bot/data/finance_tracker.db`
+
+### Viewing Data
+
+Use the included utilities:
 ```bash
-# Interactive browser
+cd ~/register-track-bot
+
+# Interactive browser (most features)
 python3 utils/db_browser.py
 
-# Quick view
+# Quick overview
 python3 utils/view_db.py
 
-# Cleanup utility
+# Cleanup tool
 python3 utils/cleanup_db.py
 ```
 
-### Backup database:
-```bash
-cp ~/register-track-bot/data/finance_tracker.db ~/finance_tracker_backup_$(date +%Y%m%d).db
-```
+### Direct SQL Access
 
-### View database with SQLite (optional):
+Install SQLite (if needed):
 ```bash
 sudo apt install sqlite3 -y
+```
+
+Open database:
+```bash
 sqlite3 ~/register-track-bot/data/finance_tracker.db
 ```
 
-In SQLite console:
+Example queries:
 ```sql
--- View expenses
+-- View recent expenses
 SELECT * FROM expenses ORDER BY date DESC LIMIT 10;
 
--- View incomes  
-SELECT * FROM incomes ORDER BY date DESC LIMIT 10;
+-- Monthly totals
+SELECT strftime('%Y-%m', date) as month, 
+       SUM(amount) as total 
+FROM expenses 
+GROUP BY month 
+ORDER BY month DESC;
 
--- Exit
+-- Exit SQLite
 .quit
+```
+
+### Backup Strategy
+
+Manual backup:
+```bash
+cp ~/register-track-bot/data/finance_tracker.db \
+   ~/backups/finance_$(date +%Y%m%d).db
+```
+
+Automated daily backups:
+```bash
+# Create backup directory
+mkdir -p ~/backups
+
+# Edit crontab
+crontab -e
+
+# Add this line for daily 2 AM backups:
+0 2 * * * cp ~/register-track-bot/data/finance_tracker.db ~/backups/finance_$(date +\%Y\%m\%d).db
+```
+
+Keep last 30 days of backups:
+```bash
+# Add to crontab
+0 3 * * * find ~/backups -name "finance_*.db" -mtime +30 -delete
 ```
 
 ## Updating the Bot
 
-When you make changes to the code:
+When updates are available:
 
-1. Stop the service:
 ```bash
+# Stop the service
 sudo systemctl stop register-bot.service
-```
 
-2. Pull latest changes:
-```bash
+# Backup current database
+cp ~/register-track-bot/data/finance_tracker.db ~/finance_backup.db
+
+# Pull updates
 cd ~/register-track-bot
 git pull
-```
 
-3. Restart the service:
-```bash
+# Install any new dependencies
+pip3 install -r requirements.txt
+
+# Restart service
 sudo systemctl start register-bot.service
+
+# Check status
+sudo systemctl status register-bot.service
 ```
 
 ## Troubleshooting
 
-### Bot not responding?
-1. Check service status: `sudo systemctl status register-bot.service`
-2. Check logs: `sudo journalctl -u register-bot.service -n 100`
-3. Verify token is correct in service file
-4. Ensure internet connection is working
+### Bot Not Responding
 
-### Database errors?
-1. Check file permissions: `ls -l ~/register-track-bot/data/finance_tracker.db`
-2. Ensure the bot has write permissions to the directory
-3. Try restarting the service
-
-### Service won't start?
-1. Check syntax of service file: `sudo systemd-analyze verify register-bot.service`
-2. Check Python path: `which python3`
-3. Ensure all dependencies are installed: `pip3 list`
-
-## Security Recommendations
-
-1. **Never commit your bot token to git**
-   - Add `.env` to `.gitignore` if using environment files
-   - Use the systemd service Environment variable
-
-2. **Backup your database regularly**
+1. Check if service is running:
    ```bash
-   # Add to crontab for daily backups
-   crontab -e
-   # Add this line:
-   0 2 * * * cp ~/register-track-bot/data/finance_tracker.db ~/backups/finance_$(date +\%Y\%m\%d).db
+   sudo systemctl status register-bot.service
    ```
 
-3. **Keep your system updated**
+2. View recent logs:
    ```bash
-   sudo apt update && sudo apt upgrade -y
+   sudo journalctl -u register-bot.service -n 100
    ```
 
-4. **Monitor disk space**
+3. Verify token is correct in service file:
    ```bash
-   df -h
+   sudo nano /etc/systemd/system/register-bot.service
    ```
 
-## Performance Notes
+4. Test internet connection:
+   ```bash
+   ping -c 4 api.telegram.org
+   ```
 
-- SQLite is lightweight and perfect for Raspberry Pi
-- Database file will grow slowly (typically <100MB per year of data)
-- No external database server needed
-- Bot uses minimal resources (~20-30MB RAM)
-- Can handle multiple concurrent users
+### Service Won't Start
 
-## Next Steps
+Check for errors:
+```bash
+sudo journalctl -u register-bot.service -xe
+```
 
-- Set up automatic database backups
-- Configure log rotation if needed
-- Monitor bot performance with `htop`
-- Consider setting up a reverse proxy for web interface (future feature)
+Verify Python path:
+```bash
+which python3
+```
+
+Check dependencies:
+```bash
+pip3 list | grep telegram
+```
+
+### Database Issues
+
+Check file permissions:
+```bash
+ls -la ~/register-track-bot/data/
+```
+
+Ensure write access:
+```bash
+touch ~/register-track-bot/data/test.txt && rm ~/register-track-bot/data/test.txt
+```
+
+Check disk space:
+```bash
+df -h
+```
+
+## Performance & Monitoring
+
+Expected performance on Raspberry Pi 4:
+
+| Metric | Value |
+|--------|-------|
+| RAM Usage | ~20-30 MB |
+| CPU Usage | <1% (idle) |
+| Disk Space | ~50 MB (app) + database growth |
+| Network | Minimal (polling API) |
+
+Database growth rate: ~1-5 MB per year per user
+
+## Security Best Practices
+
+1. **Never commit tokens to git** - Keep them in the service file only
+2. **Regular updates** - `sudo apt update && sudo apt upgrade -y`
+3. **Monitor logs regularly** - `sudo journalctl -u register-bot.service --since today`
+4. **Backup database** - Set up automated daily backups
+
+## Support
+
+Need help? 
+
+- Check the [README](../README.md)
+- Review logs: `sudo journalctl -u register-bot.service -n 100`
+- Open an issue: [GitHub Issues](https://github.com/diogoviieira/register-track-bot/issues)
 
 ---
 
-**Your bot is now running 24/7 on your Raspberry Pi!** 🎉
-
-Test it in Telegram with `/start` or `/help`
+**Your bot is now deployed! 🎉** Test it by sending `/start` to your bot in Telegram.

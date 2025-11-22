@@ -1,131 +1,190 @@
 # 💰 Telegram Finance Tracker Bot
 
-A Telegram bot for tracking personal expenses and incomes with multi-user support and SQLite database storage.
+> A production-ready Telegram bot for personal finance management with multi-user support, built for reliability and ease of use.
+
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Telegram Bot](https://img.shields.io/badge/Telegram-Bot-blue.svg?logo=telegram)](https://core.telegram.org/bots)
+
+## ✨ Features
+
+- 💬 **Conversational Interface** - Natural conversation flow for logging expenses
+- 🏷️ **Smart Categorization** - Pre-defined categories with auto-descriptions for common expenses
+- 📊 **Multi-User Support** - Isolated data per user with secure access control
+- 💾 **SQLite Database** - Lightweight, reliable, and perfect for 24/7 operation
+- 🔍 **Powerful Queries** - View, edit, and analyze your expenses by date or month
+- 📈 **Monthly Summaries** - Track spending patterns with category breakdowns
+- 🛠️ **Management Tools** - Interactive browser, viewer, and cleanup utilities included
+- 🚀 **Production Ready** - Systemd service configuration for Raspberry Pi deployment
+
+## 🚀 Quick Start
+
+```bash
+# Clone the repository
+git clone https://github.com/diogoviieira/register-track-bot.git
+cd register-track-bot
+
+# Set up virtual environment (recommended)
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Set your bot token
+export TELEGRAM_BOT_TOKEN="your_bot_token_here"
+
+# Run the bot
+python run_bot.py
+```
 
 ## 📁 Project Structure
 
 ```
 register-track-bot/
-├── src/                    # Main bot source code
-│   └── bot.py             # Telegram bot implementation
-├── utils/                  # Database management utilities
-│   ├── db_browser.py      # Interactive database browser
-│   ├── view_db.py         # Quick database viewer
-│   └── cleanup_db.py      # Database cleanup utility
-├── tests/                  # Test files
-│   ├── test_multiuser.py  # Multi-user isolation tests
-│   └── test_bot_features.py
+├── src/bot.py              # Main bot logic
+├── utils/                  # Database management tools
+├── tests/                  # Test suite
 ├── docs/                   # Documentation
-│   ├── README.md          # This file (linked from root)
-│   ├── DEPLOY.md          # Deployment guide
-│   ├── MIGRATION.md       # Migration documentation
-│   ├── CONTRIBUTING.md    # Contribution guidelines
-│   └── Commands.md        # Bot commands reference
 ├── config/                 # Configuration files
-│   ├── register-bot.service  # Systemd service
-│   └── .env.example       # Environment variables template
-├── data/                   # Data directory (excluded from git)
-│   ├── finance_tracker.db # SQLite database
-│   ├── expenses.xlsx      # Legacy Excel files (backup)
-│   ├── incomes.xlsx
-│   └── REPORTS/           # Generated reports
-├── run_bot.py             # Bot launcher script
-├── requirements.txt       # Python dependencies
-└── LICENSE
-
+├── data/                   # Database storage (auto-created)
+└── run_bot.py              # Entry point
 ```
 
-## 🚀 Quick Start
+## 📖 Usage
 
-### Local Development
+### Basic Commands
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/diogoviieira/register-track-bot.git
-   cd register-track-bot
-   ```
+```
+/start      - Start the bot and see available commands
+/expense    - Log a new expense
+/income     - Record income
+/view       - View entries for today or specific date
+/month      - View monthly summary
+/edit       - Modify existing entries
+/delete     - Remove entries
+/help       - Show all commands
+```
 
-2. **Install dependencies**
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-   pip install -r requirements.txt
-   ```
+### Example Workflow
 
-3. **Set up environment**
-   ```bash
-   cp config/.env.example .env
-   # Edit .env and add your TELEGRAM_BOT_TOKEN
-   ```
+1. Start a conversation: `/expense`
+2. Select category (e.g., "Home", "Car", "Food")
+3. Choose subcategory (e.g., "Rent", "Fuel", "Groceries")
+4. Enter amount: `45.50`
+5. Add description or skip (auto-filled for common items)
+6. Done! ✅
 
-4. **Run the bot**
-   ```bash
-   python run_bot.py
-   ```
+### Monthly Overview
 
-### Raspberry Pi Deployment
+```
+/month november
+```
 
-See [docs/DEPLOY.md](docs/DEPLOY.md) for complete deployment instructions.
+Get instant summaries with category breakdowns and totals.
 
-## 📊 Database Management
+## 🏗️ Architecture
 
-### Interactive Browser
+- **Bot Framework**: python-telegram-bot 22.5
+- **Database**: SQLite with optimized indexes
+- **Design**: Conversation-based state management
+- **Security**: User ID-based data isolation
+- **Performance**: Thread-safe connections, ~20-30MB RAM
+
+## 🛠️ Database Tools
+
+Three built-in utilities for database management:
+
+| Tool | Purpose | Use Case |
+|------|---------|----------|
+| `db_browser.py` | Interactive browser | Query, search, export to CSV |
+| `view_db.py` | Quick viewer | Check stats and recent entries |
+| `cleanup_db.py` | Data cleanup | Remove test data, optimize DB |
+
 ```bash
-python utils/db_browser.py
+python utils/db_browser.py  # Full-featured browser
+python utils/view_db.py     # Quick overview
+python utils/cleanup_db.py  # Maintenance
 ```
-Features: view records, search, filter by user, monthly summaries, export to CSV
 
-### Quick View
+## 🎯 Key Highlights
+
+### Production Ready
+- ✅ Systemd service for 24/7 uptime on Raspberry Pi
+- ✅ Automatic restart on failure
+- ✅ Comprehensive logging and monitoring
+
+### Developer Friendly
+- Clean, modular codebase
+- Well-documented functions
+- Comprehensive test suite
+- Easy to extend and customize
+
+### User Experience
+- Intuitive conversation flow
+- Smart auto-completion
+- European date format support (DD/MM/YY)
+- Multi-language month recognition
+
+## 🚢 Deployment
+
+Designed for Raspberry Pi but works anywhere Python runs.
+
+### Raspberry Pi Setup
+
 ```bash
-python utils/view_db.py
-```
-Shows: total counts, recent entries, user statistics, monthly summary
+# Clone and install
+git clone https://github.com/diogoviieira/register-track-bot.git
+cd register-track-bot
+pip3 install -r requirements.txt
 
-### Cleanup Utility
+# Configure service
+sudo cp config/register-bot.service /etc/systemd/system/
+sudo systemctl enable register-bot.service
+sudo systemctl start register-bot.service
+```
+
+📖 **Full guide**: [docs/DEPLOY.md](docs/DEPLOY.md)
+
+### Docker (Coming Soon)
+
 ```bash
-python utils/cleanup_db.py
+docker run -e TELEGRAM_BOT_TOKEN=your_token diogoviieira/finance-tracker
 ```
-Options: delete test users, delete by date range, delete all data, vacuum database
-
-## 🔑 Features
-
-- 💸 Track expenses and incomes
-- 📅 Date-based organization
-- 📂 Category and subcategory system
-- 👥 Multi-user support with data isolation
-- 🔍 Search and filter capabilities
-- 📊 Monthly summaries and statistics
-- 🗄️ SQLite database (no Excel files)
-- 🔐 Secure user data separation
-- 🛠️ Database management utilities
-
-## 📝 Bot Commands
-
-- `/start` - Start the bot
-- `/expense` - Register a new expense
-- `/income` - Register a new income
-- `/view` - View your entries
-- `/help` - Show help message
-
-See [docs/Commands.md](docs/Commands.md) for detailed command reference.
 
 ## 🧪 Testing
 
 ```bash
-# Run multi-user isolation tests
-python tests/test_multiuser.py
+python tests/test_multiuser.py  # Multi-user isolation
+python tests/test_bot_features.py  # Feature tests
 ```
+
+## 📚 Documentation
+
+- [Deployment Guide](docs/DEPLOY.md) - Raspberry Pi setup and systemd configuration
+- [Migration Notes](docs/MIGRATION.md) - Excel to SQLite migration details
+- [Contributing](docs/CONTRIBUTING.md) - Guidelines for contributors
+- [Commands Reference](docs/Commands.md) - Complete command documentation
 
 ## 🤝 Contributing
 
-See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for contribution guidelines.
+Contributions are welcome! Please read [CONTRIBUTING.md](docs/CONTRIBUTING.md) first.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🔗 Links
+## 💬 Support
 
-- **Documentation**: [docs/](docs/)
-- **Deployment Guide**: [docs/DEPLOY.md](docs/DEPLOY.md)
-- **Migration Guide**: [docs/MIGRATION.md](docs/MIGRATION.md)
+Found a bug? Have a feature request? [Open an issue](https://github.com/diogoviieira/register-track-bot/issues)
+
+---
+
+<p align="center">Made with ❤️ for personal finance management</p>
+<p align="center">Built with Python • Telegram Bot API • SQLite</p>
