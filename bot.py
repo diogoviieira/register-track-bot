@@ -26,9 +26,11 @@ logger = logging.getLogger(__name__)
 # Conversation states
 CATEGORY, SUBCATEGORY, AMOUNT, DESCRIPTION, DATE_INPUT, EDIT_FIELD = range(6)
 
-# Excel file path
+# Excel file paths
 EXCEL_FILE = "expenses.xlsx"
 LOCK_FILE = "expenses.xlsx.lock"
+INCOME_FILE = "incomes.xlsx"
+INCOME_LOCK_FILE = "incomes.xlsx.lock"
 
 # Excel column indices (0-indexed for reading)
 class ExcelColumns:
@@ -86,7 +88,7 @@ CATEGORIES = [
     ["Lazer", "Travel"],
     ["Needs", "Health"],
     ["Streaming", "Subscriptions"],
-    ["Others"]
+    ["Others", "Incomes"]
 ]
 
 # Subcategories for each main category
@@ -118,7 +120,7 @@ SUBCATEGORIES = {
     "Subscriptions": [
         ["Patreon", "iCloud"],
         ["Spotify", "F1 TV"],
-        ["Telemóvel"]
+        ["Telemóvel", "Other"]
     ],
     "Needs": [
         ["Groceries", "Clothing"],
@@ -133,6 +135,11 @@ SUBCATEGORIES = {
     "Others": [
         ["Gifts", "Pet"],
         ["Mi Mimei", "Other"]
+    ],
+    "Incomes": [
+        ["Refeição", "Subsídio"],
+        ["Bónus", "Salary"],
+        ["Others"]
     ]
 }
 
@@ -142,7 +149,8 @@ AUTO_DESCRIPTION = {
     "Home": ["Rent", "Light", "Water", "Net"],
     "Car": ["Fuel", "Insurance", "Via Verde"],
     "Streaming": "all",  # All subcategories in Streaming
-    "Subscriptions": "all"  # All subcategories in Subscriptions
+    "Subscriptions": "all",  # All subcategories in Subscriptions
+    "Incomes": ["Refeição", "Subsídio", "Bónus", "Salary"]  # All except Others
 }
 
 
@@ -257,12 +265,28 @@ def init_excel():
         logger.info(f"Created new Excel file: {EXCEL_FILE}")
 
 
+def init_income_excel():
+    """Initialize Income Excel file if it doesn't exist"""
+    if not os.path.exists(INCOME_FILE):
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Incomes"
+        ws.append(["Date", "Time", "Category", "Subcategory", "Amount", "Description"])
+        wb.save(INCOME_FILE)
+        logger.info(f"Created new Income file: {INCOME_FILE}")
+
+
 def save_expense(category: str, subcategory: str, amount: float, description: str, custom_date: str = None):
-    """Save expense to Excel file with optional custom date"""
-    lock = get_file_lock()
+    """Save expense or income to appropriate Excel file with optional custom date"""
+    # Determine if this is an income or expense
+    is_income = (category == "Incomes")
+    file_path = INCOME_FILE if is_income else EXCEL_FILE
+    lock_file = INCOME_LOCK_FILE if is_income else LOCK_FILE
+    
+    lock = FileLock(lock_file, timeout=10)
     try:
         with lock:
-            wb = openpyxl.load_workbook(EXCEL_FILE)
+            wb = openpyxl.load_workbook(file_path)
             ws = wb.active
             
             if custom_date:
@@ -274,13 +298,95 @@ def save_expense(category: str, subcategory: str, amount: float, description: st
             
             ws.append([date_str, time_str, category, subcategory, amount, description])
             
-            if safe_save_workbook(wb):
-                logger.info(f"Saved expense: {category} > {subcategory} - €{amount} on {date_str}")
+            # Save to appropriate file
+            try:
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx', mode='wb') as tmp:
+                    tmp_path = tmp.name
+                wb.save(tmp_path)
+                shutil.move(tmp_path, file_path)
+                
+                entry_type = "income" if is_income else "expense"
+                logger.info(f"Saved {entry_type}: {category} > {subcategory} - €{amount} on {date_str}")
                 return True
-            return False
+            except Exception as e:
+                if 'tmp_path' in locals() and os.path.exists(tmp_path):
+                    try:
+                        os.remove(tmp_path)
+                    except:
+                        pass
+                logger.error(f"Error in safe save: {e}")
+                return False
     except Exception as e:
         logger.error(f"Error saving expense: {e}")
         return False
+
+
+async def view_incomes_month(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """View incomes for a specific month"""
+    try:
+        # Parse the command to get month name or number
+        message_text = update.message.text.lower()
+        
+        # Extract month from command (e.g., "/income november" or "/income 11")
+        parts = message_text.split()
+        if len(parts) < 2:
+            await update.message.reply_text(
+                "📅 Please specify a month.\n\n"
+                "Examples:\n"
+                "/income november\n"
+                "/income 11\n"
+                "/income novembro"
+            )
+            return
+        
+        month_input = parts[1]
+        month_num = MONTH_MAPPINGS.get(month_input)
+        
+        if not month_num:
+            await update.message.reply_text(
+                "❌ Invalid month. Please use month name or number (1-12).\n\n"
+                "Examples: /income november or /income 11"
+            )
+            return
+        
+        # Get current year
+        current_year = datetime.now().year
+        
+        # Load incomes
+        lock = FileLock(INCOME_LOCK_FILE, timeout=10)
+        with lock:
+            wb = openpyxl.load_workbook(INCOME_FILE)
+            ws = wb.active
+        
+            incomes = []
+            total = 0.0
+            category_totals = {}
+            
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                if row[ExcelColumns.DATE] and row[ExcelColumns.DATE].startswith(f"{current_year}-{month_num}"):
+                    incomes.append(row)
+                    total += float(row[ExcelColumns.AMOUNT])
+                    
+                    # Track subcategory totals (all are Incomes category)
+                    subcategory = row[ExcelColumns.SUBCATEGORY]
+                    category_totals[subcategory] = category_totals.get(subcategory, 0) + float(row[ExcelColumns.AMOUNT])
+        
+        if incomes:
+            message = f"💰 Incomes for {MONTH_NAMES[month_num]} {current_year}:\n\n"
+            message += f"📋 By Type:\n"
+            for subcat, subcat_total in sorted(category_totals.items()):
+                message += f"  • {subcat}: €{subcat_total:.2f}\n"
+            
+            message += f"\n💵 Total Income: €{total:.2f}\n"
+            message += f"📝 {len(incomes)} income(s) recorded"
+        else:
+            await update.message.reply_text(f"No incomes recorded for {month_input.capitalize()} {current_year}.")
+            return
+        
+        await update.message.reply_text(message)
+        
+    except Exception as e:
+        await handle_error(update, e, "viewing month incomes")
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -301,6 +407,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "** Monthly Overview **\n"
         "/month <name> - View expenses for a month\n"
         "Example: /month november or /month 11\n\n"
+        "** Incomes **\n"
+        "/income <month> - View total incomes for a month\n"
+        "Example: /income november or /income 11\n\n"
         "** Other **\n"
         "/help - Show this help message\n"
         "/cancel - Cancel current operation"
@@ -935,8 +1044,9 @@ async def show_delete_for_date(update: Update, context: ContextTypes.DEFAULT_TYP
 
 def main():
     """Start the bot"""
-    # Initialize Excel file
+    # Initialize Excel files
     init_excel()
+    init_income_excel()
     
     # Read bot token from environment variable or config
     BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -1005,6 +1115,7 @@ def main():
     application.add_handler(edit_date_handler)
     application.add_handler(CommandHandler("view", view_expenses))
     application.add_handler(CommandHandler("month", view_month_expenses))
+    application.add_handler(CommandHandler("income", view_incomes_month))
     application.add_handler(CommandHandler("summary", summary))
     application.add_handler(CommandHandler("edit", edit_expense))
     application.add_handler(CommandHandler("delete", delete_expense))
