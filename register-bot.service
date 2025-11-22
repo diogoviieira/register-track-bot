@@ -1,0 +1,20 @@
+[Unit]
+Description=Telegram Finance Tracker Bot
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/register-track-bot
+Environment="TELEGRAM_BOT_TOKEN=your_token_here"
+ExecStart=/usr/bin/python3 /home/pi/register-track-bot/bot.py
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=register-bot
+
+[Install]
+WantedBy=multi-user.target

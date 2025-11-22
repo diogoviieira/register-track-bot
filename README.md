@@ -1,19 +1,21 @@
 # Telegram Expense Tracker Bot
 
-A Python-based Telegram bot that helps you track your daily expenses and automatically saves them to an Excel file.
+A Python-based Telegram bot that helps you track your daily expenses and incomes. Designed for 24/7 operation on Raspberry Pi with SQLite database storage.
 
 ## Features
 
 - 💬 Interactive conversation-based expense logging
 - 📊 Multiple expense categories with subcategories (Home, Car, Lazer, Travel, Needs, Health, Streaming, Subscriptions, Others)
+- 💰 Separate income tracking (Salary, Refeição, Subsídio, Bónus, Others)
 - 🎯 Smart auto-description for recurring expenses (rent, utilities, subscriptions, etc.)
-- 💰 Track amount and description for each expense
 - 📅 European date format (DD/MM/YY) support
 - 📈 View expenses for today, specific dates, or entire months
 - 📉 Get expense summaries by category
 - ✏️ Edit expenses (amount or description) from any date
 - 🗑️ Delete expenses from any date
-- 📑 All data saved to Excel file for easy analysis
+- 💾 SQLite database storage (lightweight, no external server needed)
+- 🔄 Perfect for 24/7 operation on Raspberry Pi
+- 🚀 Low resource usage (~20-30MB RAM)
 
 ## Setup Instructions
 
@@ -92,8 +94,10 @@ C:\repos\register-track-bot\.venv\Scripts\python.exe bot.py
 
 **Monthly Overview:**
 - `/month <name>` - View all expenses for a month (e.g., `/month november` or `/month 11`)
+- `/income <month>` - View all incomes for a month (e.g., `/income november` or `/income 11`)
 
 **Other:**
+- `/help` - Show all available commands
 - `/cancel` - Cancel the current operation
 
 ### Adding an Expense (Today)
@@ -234,22 +238,46 @@ Bot: ✅ Deleted expense:
 2. Enter date in DD/MM/YY format
 3. Select the expense number to delete
 
-## Excel File Format
+## Database Structure
 
-The bot creates an `expenses.xlsx` file with the following columns:
+The bot creates a `finance_tracker.db` SQLite database with two tables:
 
-| Date       | Time     | Category | Subcategory | Amount | Description    |
-|------------|----------|----------|-------------|--------|----------------|
-| 2025-11-17 | 14:30:15 | Car      | Fuel        | 45.50  | Car - Fuel     |
-| 2025-11-17 | 18:45:22 | Home     | Rent        | 800.00 | Home - Rent    |
-| 2025-11-18 | 10:15:00 | Lazer    | Coffees     | 3.50   | Morning coffee |
+**Expenses Table:**
+| id | date       | time     | category | subcategory | amount | description    | created_at          |
+|----|------------|----------|----------|-------------|--------|----------------|---------------------|
+| 1  | 2025-11-17 | 14:30:15 | Car      | Fuel        | 45.50  | Car - Fuel     | 2025-11-17 14:30:15 |
+| 2  | 2025-11-17 | 18:45:22 | Home     | Rent        | 800.00 | Home - Rent    | 2025-11-17 18:45:22 |
+| 3  | 2025-11-18 | 10:15:00 | Lazer    | Coffees     | 3.50   | Morning coffee | 2025-11-18 10:15:00 |
+
+**Incomes Table:**
+| id | date       | time     | category | subcategory | amount  | description          | created_at          |
+|----|------------|----------|----------|-------------|---------|----------------------|---------------------|
+| 1  | 2025-11-01 | 09:00:00 | Incomes  | Salary      | 2000.00 | Incomes - Salary     | 2025-11-01 09:00:00 |
+| 2  | 2025-11-15 | 12:00:00 | Incomes  | Refeição    | 150.00  | Incomes - Refeição   | 2025-11-15 12:00:00 |
+
+## Raspberry Pi Deployment
+
+For 24/7 operation on Raspberry Pi, see the detailed deployment guide:
+👉 **[DEPLOY.md](DEPLOY.md)** - Complete Raspberry Pi setup instructions
+
+Quick summary:
+1. Clone repo to Raspberry Pi
+2. Install dependencies: `pip3 install -r requirements.txt`
+3. Set bot token in systemd service file
+4. Enable service: `sudo systemctl enable register-bot.service`
+5. Start service: `sudo systemctl start register-bot.service`
+
+The bot will automatically start on boot and restart if it crashes!
 
 ## Tips
 
-- The bot automatically creates the Excel file on first run
-- All expenses are timestamped automatically
-- You can open the Excel file anytime to analyze your spending
+- The bot automatically creates the database on first run
+- All expenses and incomes are timestamped automatically
+- Expenses and incomes are stored in separate tables
+- Use SQLite browser to analyze your data (optional)
 - Use `/summary` to quickly see where your money is going
+- Use `/income <month>` to track your monthly income
+- Database is lightweight and grows slowly (~100MB per year)
 - The bot supports multiple users - each can add their own expenses
 
 ## Troubleshooting
@@ -259,9 +287,10 @@ The bot creates an `expenses.xlsx` file with the following columns:
 - Check that your token is set correctly
 - Verify you have internet connection
 
-**Excel file errors:**
-- Make sure the `expenses.xlsx` file isn't open in Excel while the bot is running
-- Check file permissions in the directory
+**Database errors:**
+- Check file permissions for `finance_tracker.db`
+- Ensure the bot has write permissions to the directory
+- Restart the bot if database is locked
 
 **Installation issues:**
 - Update pip: `python -m pip install --upgrade pip`
@@ -278,6 +307,7 @@ The bot creates an `expenses.xlsx` file with the following columns:
 - **Needs**: Groceries, Clothing, Personal Care, Setup, Other
 - **Health**: Doctor, Pharmacy, Hospital, Gym, Supplements, Other
 - **Others**: Gifts, Pet, Mi Mimei, Other
+- **Incomes**: Refeição, Subsídio, Bónus, Salary, Others
 
 ## Customization
 
@@ -285,19 +315,56 @@ You can easily customize the bot by editing `bot.py`:
 
 - **Add/modify categories**: Edit the `CATEGORIES` and `SUBCATEGORIES` dictionaries
 - **Change auto-description rules**: Modify the `AUTO_DESCRIPTION` dictionary
-- **Change Excel file name**: Update the `EXCEL_FILE` variable
+- **Change database file name**: Update the `DB_FILE` variable
 - **Add new features**: Extend the bot with additional commands
 - **Currency symbol**: Change `€` to your preferred currency
+- **Backup database**: Use SQLite backup commands or simple file copy
+
+## Database Management
+
+View database contents using SQLite:
+```bash
+# Install SQLite (if needed)
+sudo apt install sqlite3 -y
+
+# Open database
+sqlite3 finance_tracker.db
+
+# View expenses
+SELECT * FROM expenses ORDER BY date DESC LIMIT 10;
+
+# View incomes
+SELECT * FROM incomes ORDER BY date DESC LIMIT 10;
+
+# Get monthly totals
+SELECT strftime('%Y-%m', date) as month, SUM(amount) as total 
+FROM expenses 
+GROUP BY month 
+ORDER BY month DESC;
+```
+
+**Backup database:**
+```bash
+# Create backup
+cp finance_tracker.db finance_backup_$(date +%Y%m%d).db
+
+# Or use SQLite backup
+sqlite3 finance_tracker.db ".backup finance_backup.db"
+```
 
 ## Future Enhancements
 
 Potential features to add:
 - Budget limits with alerts
-- Export to different file formats (CSV, PDF)
-- Multi-user support with separate files
-- Expense editing
-- Charts and visualizations
+- Export to CSV/PDF
+- Charts and visualizations  
 - Recurring expense templates
 - Year-over-year comparisons
+- Web dashboard interface
+- Automated backups to cloud storage
 
 Enjoy tracking your expenses! 💰📊
+
+---
+
+**Made with ❤️ for Raspberry Pi deployment**

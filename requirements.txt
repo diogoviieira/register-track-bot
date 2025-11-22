@@ -1,3 +1,2 @@
-python-telegram-bot==20.7
-openpyxl==3.1.2
-filelock==3.13.1
+python-telegram-bot==22.5
+# sqlite3 is built-in to Python (no installation needed)

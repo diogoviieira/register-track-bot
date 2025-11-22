@@ -9,13 +9,11 @@ from telegram.ext import (
     ContextTypes,
 )
 from datetime import datetime
-import openpyxl
-from openpyxl import Workbook
 import os
 import math
-import shutil
-import tempfile
-from filelock import FileLock
+import sqlite3
+from contextlib import contextmanager
+import threading
 
 # Enable logging
 logging.basicConfig(
@@ -26,28 +24,21 @@ logger = logging.getLogger(__name__)
 # Conversation states
 CATEGORY, SUBCATEGORY, AMOUNT, DESCRIPTION, DATE_INPUT, EDIT_FIELD = range(6)
 
-# Excel file paths
-EXCEL_FILE = "expenses.xlsx"
-LOCK_FILE = "expenses.xlsx.lock"
-INCOME_FILE = "incomes.xlsx"
-INCOME_LOCK_FILE = "incomes.xlsx.lock"
+# Database file path
+DB_FILE = "finance_tracker.db"
 
-# Excel column indices (0-indexed for reading)
-class ExcelColumns:
-    DATE = 0
-    TIME = 1
-    CATEGORY = 2
-    SUBCATEGORY = 3
-    AMOUNT = 4
-    DESCRIPTION = 5
-    
-    # For writing (1-indexed)
-    DATE_WRITE = 1
-    TIME_WRITE = 2
-    CATEGORY_WRITE = 3
-    SUBCATEGORY_WRITE = 4
-    AMOUNT_WRITE = 5
-    DESCRIPTION_WRITE = 6
+# Thread-local storage for database connections
+thread_local = threading.local()
+
+# Database column names
+class DBColumns:
+    ID = "id"
+    DATE = "date"
+    TIME = "time"
+    CATEGORY = "category"
+    SUBCATEGORY = "subcategory"
+    AMOUNT = "amount"
+    DESCRIPTION = "description"
 
 # Month mappings (English, Portuguese, and numbers)
 MONTH_MAPPINGS = {
@@ -171,9 +162,21 @@ def get_today_date() -> str:
     return datetime.now().strftime("%Y-%m-%d")
 
 
-def get_file_lock(timeout=10):
-    """Get a file lock for Excel operations"""
-    return FileLock(LOCK_FILE, timeout=timeout)
+@contextmanager
+def get_db_connection():
+    """Get thread-safe database connection with automatic commit/rollback"""
+    # Use thread-local storage to ensure each thread has its own connection
+    if not hasattr(thread_local, "connection"):
+        thread_local.connection = sqlite3.connect(DB_FILE, check_same_thread=False)
+        thread_local.connection.row_factory = sqlite3.Row
+    
+    conn = thread_local.connection
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def format_success_message(category: str, subcategory: str, amount: float, description: str, target_date: str = None) -> str:
@@ -195,129 +198,94 @@ async def handle_error(update: Update, error: Exception, operation: str, logger_
     await update.message.reply_text(f"Error {operation}. Please try again.")
 
 
-def format_expense_line(row, values_only=True) -> str:
-    """Format a single expense line for display"""
-    if values_only:
-        # Row is tuple of values
-        return f"• {row[ExcelColumns.CATEGORY]} > {row[ExcelColumns.SUBCATEGORY]}: €{row[ExcelColumns.AMOUNT]:.2f} - {row[ExcelColumns.DESCRIPTION]}"
-    else:
-        # Row is openpyxl Row object with .value attributes
-        return f"• {row[ExcelColumns.CATEGORY].value} > {row[ExcelColumns.SUBCATEGORY].value}: €{row[ExcelColumns.AMOUNT].value:.2f} - {row[ExcelColumns.DESCRIPTION].value}"
+def format_expense_line(row) -> str:
+    """Format a single expense line for display from database row"""
+    return f"• {row['category']} > {row['subcategory']}: €{row['amount']:.2f} - {row['description']}"
 
 
 def format_expense_numbered(index: int, row) -> str:
     """Format a numbered expense line for selection lists"""
-    return f"{index}. {row[ExcelColumns.CATEGORY].value} > {row[ExcelColumns.SUBCATEGORY].value}: €{row[ExcelColumns.AMOUNT].value:.2f} - {row[ExcelColumns.DESCRIPTION].value}"
+    return f"{index}. {row['category']} > {row['subcategory']}: €{row['amount']:.2f} - {row['description']}"
 
 
-def get_expenses_for_date(target_date: str, lock: FileLock, values_only=True):
-    """Load expenses for a specific date with file locking"""
-    with lock:
-        wb = openpyxl.load_workbook(EXCEL_FILE)
-        ws = wb.active
+def get_entries_for_date(target_date: str, table: str = "expenses"):
+    """Load entries (expenses or incomes) for a specific date from database"""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(f"""
+            SELECT * FROM {table}
+            WHERE date = ?
+            ORDER BY time DESC
+        """, (target_date,))
+        return cursor.fetchall()
+
+
+def init_database():
+    """Initialize SQLite database with expenses and incomes tables"""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
         
-        if values_only:
-            expenses = [
-                row for row in ws.iter_rows(min_row=2, values_only=True)
-                if row[ExcelColumns.DATE] == target_date
-            ]
-        else:
-            expenses = [
-                (idx, row) for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=False), start=2)
-                if row[ExcelColumns.DATE].value == target_date
-            ]
+        # Create expenses table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS expenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                time TEXT NOT NULL,
+                category TEXT NOT NULL,
+                subcategory TEXT NOT NULL,
+                amount REAL NOT NULL,
+                description TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         
-        return expenses
-
-
-def safe_save_workbook(wb):
-    """Safely save workbook with transaction safety using temp file"""
-    try:
-        # Save to temp file first
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx', mode='wb') as tmp:
-            tmp_path = tmp.name
+        # Create incomes table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS incomes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                time TEXT NOT NULL,
+                category TEXT NOT NULL,
+                subcategory TEXT NOT NULL,
+                amount REAL NOT NULL,
+                description TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         
-        # Save workbook to temp file
-        wb.save(tmp_path)
+        # Create indexes for better query performance
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_incomes_date ON incomes(date)")
         
-        # Only replace original if save succeeded
-        shutil.move(tmp_path, EXCEL_FILE)
-        return True
-    except Exception as e:
-        # Clean up temp file if it exists
-        if 'tmp_path' in locals() and os.path.exists(tmp_path):
-            try:
-                os.remove(tmp_path)
-            except:
-                pass
-        logger.error(f"Error in safe save: {e}")
-        return False
-
-
-def init_excel():
-    """Initialize Excel file if it doesn't exist"""
-    if not os.path.exists(EXCEL_FILE):
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Expenses"
-        ws.append(["Date", "Time", "Category", "Subcategory", "Amount", "Description"])
-        wb.save(EXCEL_FILE)
-        logger.info(f"Created new Excel file: {EXCEL_FILE}")
-
-
-def init_income_excel():
-    """Initialize Income Excel file if it doesn't exist"""
-    if not os.path.exists(INCOME_FILE):
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Incomes"
-        ws.append(["Date", "Time", "Category", "Subcategory", "Amount", "Description"])
-        wb.save(INCOME_FILE)
-        logger.info(f"Created new Income file: {INCOME_FILE}")
+        logger.info(f"Database initialized: {DB_FILE}")
 
 
 def save_expense(category: str, subcategory: str, amount: float, description: str, custom_date: str = None):
-    """Save expense or income to appropriate Excel file with optional custom date"""
+    """Save expense or income to database"""
     # Determine if this is an income or expense
     is_income = (category == "Incomes")
-    file_path = INCOME_FILE if is_income else EXCEL_FILE
-    lock_file = INCOME_LOCK_FILE if is_income else LOCK_FILE
+    table = "incomes" if is_income else "expenses"
     
-    lock = FileLock(lock_file, timeout=10)
     try:
-        with lock:
-            wb = openpyxl.load_workbook(file_path)
-            ws = wb.active
+        if custom_date:
+            date_str = custom_date
+        else:
+            date_str = datetime.now().strftime("%Y-%m-%d")
+        
+        time_str = datetime.now().strftime("%H:%M:%S")
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(f"""
+                INSERT INTO {table} (date, time, category, subcategory, amount, description)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (date_str, time_str, category, subcategory, amount, description))
             
-            if custom_date:
-                date_str = custom_date
-            else:
-                date_str = datetime.now().strftime("%Y-%m-%d")
-            
-            time_str = datetime.now().strftime("%H:%M:%S")
-            
-            ws.append([date_str, time_str, category, subcategory, amount, description])
-            
-            # Save to appropriate file
-            try:
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx', mode='wb') as tmp:
-                    tmp_path = tmp.name
-                wb.save(tmp_path)
-                shutil.move(tmp_path, file_path)
-                
-                entry_type = "income" if is_income else "expense"
-                logger.info(f"Saved {entry_type}: {category} > {subcategory} - €{amount} on {date_str}")
-                return True
-            except Exception as e:
-                if 'tmp_path' in locals() and os.path.exists(tmp_path):
-                    try:
-                        os.remove(tmp_path)
-                    except:
-                        pass
-                logger.error(f"Error in safe save: {e}")
-                return False
+            entry_type = "income" if is_income else "expense"
+            logger.info(f"Saved {entry_type}: {category} > {subcategory} - €{amount} on {date_str}")
+            return True
     except Exception as e:
-        logger.error(f"Error saving expense: {e}")
+        logger.error(f"Error saving {entry_type}: {e}")
         return False
 
 
@@ -352,26 +320,28 @@ async def view_incomes_month(update: Update, context: ContextTypes.DEFAULT_TYPE)
         # Get current year
         current_year = datetime.now().year
         
-        # Load incomes
-        lock = FileLock(INCOME_LOCK_FILE, timeout=10)
-        with lock:
-            wb = openpyxl.load_workbook(INCOME_FILE)
-            ws = wb.active
+        # Query incomes from database
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM incomes
+                WHERE date LIKE ?
+                ORDER BY date, time
+            """, (f"{current_year}-{month_num}-%",))
+            incomes = cursor.fetchall()
         
-            incomes = []
+        if incomes:
             total = 0.0
             category_totals = {}
             
-            for row in ws.iter_rows(min_row=2, values_only=True):
-                if row[ExcelColumns.DATE] and row[ExcelColumns.DATE].startswith(f"{current_year}-{month_num}"):
-                    incomes.append(row)
-                    total += float(row[ExcelColumns.AMOUNT])
-                    
-                    # Track subcategory totals (all are Incomes category)
-                    subcategory = row[ExcelColumns.SUBCATEGORY]
-                    category_totals[subcategory] = category_totals.get(subcategory, 0) + float(row[ExcelColumns.AMOUNT])
-        
-        if incomes:
+            for row in incomes:
+                amount = row['amount']
+                total += amount
+                
+                # Track subcategory totals (all are Incomes category)
+                subcategory = row['subcategory']
+                category_totals[subcategory] = category_totals.get(subcategory, 0) + amount
+            
             message = f"💰 Incomes for {MONTH_NAMES[month_num]} {current_year}:\n\n"
             message += f"📋 By Type:\n"
             for subcat, subcat_total in sorted(category_totals.items()):
@@ -564,13 +534,12 @@ async def description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 async def view_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """View today's expenses"""
-    lock = get_file_lock()
     try:
         today = get_today_date()
-        expenses = get_expenses_for_date(today, lock, values_only=True)
+        expenses = get_entries_for_date(today, "expenses")
         
         if expenses:
-            total = sum(float(exp[ExcelColumns.AMOUNT]) for exp in expenses)
+            total = sum(row['amount'] for row in expenses)
             message = f"📊 Today's Expenses ({today}):\n\n"
             for exp in expenses:
                 message += format_expense_line(exp) + "\n"
@@ -583,24 +552,29 @@ async def view_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_error(update, e, "viewing expenses")
 async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Get expense summary by category"""
-    lock = get_file_lock()
     try:
         today = get_today_date()
-        expenses = get_expenses_for_date(today, lock, values_only=True)
         
-        category_totals = {}
-        for row in expenses:
-            category = row[ExcelColumns.CATEGORY]
-            subcategory = row[ExcelColumns.SUBCATEGORY]
-            amount = float(row[ExcelColumns.AMOUNT])
-            key = f"{category} > {subcategory}"
-            category_totals[key] = category_totals.get(key, 0) + amount
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT category, subcategory, SUM(amount) as total
+                FROM expenses
+                WHERE date = ?
+                GROUP BY category, subcategory
+                ORDER BY category, subcategory
+            """, (today,))
+            category_totals = cursor.fetchall()
         
         if category_totals:
             message = f"📈 Today's Summary ({today}):\n\n"
-            for cat, total in sorted(category_totals.items()):
-                message += f"• {cat}: €{total:.2f}\n"
-            message += f"\n💰 Grand Total: €{sum(category_totals.values()):.2f}"
+            grand_total = 0.0
+            for row in category_totals:
+                cat_key = f"{row['category']} > {row['subcategory']}"
+                total = row['total']
+                grand_total += total
+                message += f"• {cat_key}: €{total:.2f}\n"
+            message += f"\n💰 Grand Total: €{grand_total:.2f}"
         else:
             message = "No expenses recorded for today."
         
@@ -638,26 +612,28 @@ async def view_month_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Get current year
         current_year = datetime.now().year
         
-        # Load expenses
-        lock = get_file_lock()
-        with lock:
-            wb = openpyxl.load_workbook(EXCEL_FILE)
-            ws = wb.active
+        # Query expenses from database
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM expenses
+                WHERE date LIKE ?
+                ORDER BY date, time
+            """, (f"{current_year}-{month_num}-%",))
+            expenses = cursor.fetchall()
         
-            expenses = []
+        if expenses:
             total = 0.0
             category_totals = {}
             
-            for row in ws.iter_rows(min_row=2, values_only=True):
-                if row[ExcelColumns.DATE] and row[ExcelColumns.DATE].startswith(f"{current_year}-{month_num}"):
-                    expenses.append(row)
-                    total += float(row[ExcelColumns.AMOUNT])
-                    
-                    # Track category totals
-                    key = f"{row[ExcelColumns.CATEGORY]} > {row[ExcelColumns.SUBCATEGORY]}"
-                    category_totals[key] = category_totals.get(key, 0) + float(row[ExcelColumns.AMOUNT])
-        
-        if expenses:
+            for row in expenses:
+                amount = row['amount']
+                total += amount
+                
+                # Track category totals
+                key = f"{row['category']} > {row['subcategory']}"
+                category_totals[key] = category_totals.get(key, 0) + amount
+            
             message = f"📊 Expenses for {MONTH_NAMES[month_num]} {current_year}:\n\n"
             message += f"📋 By Category:\n"
             for cat, cat_total in sorted(category_totals.items()):
@@ -683,9 +659,8 @@ async def show_expenses_for_action(
     user_data_key: str
 ):
     """Generic function to show expenses for delete/edit actions"""
-    lock = get_file_lock()
     try:
-        expenses = get_expenses_for_date(target_date, lock, values_only=False)
+        expenses = get_entries_for_date(target_date, "expenses")
         
         if not expenses:
             await update.message.reply_text(f"No expenses to {action} for {target_date}.")
@@ -695,7 +670,7 @@ async def show_expenses_for_action(
         emoji = {"delete": "🗑️", "edit": "✏️"}.get(action, "📋")
         message = f"{emoji} Expenses for {target_date}:\n\n"
         
-        for i, (row_idx, row) in enumerate(expenses, start=1):
+        for i, row in enumerate(expenses, start=1):
             message += format_expense_numbered(i, row) + "\n"
         
         message += f"\nReply with the number (1-{len(expenses)}) to {action}, or /cancel to abort."
@@ -717,7 +692,6 @@ async def delete_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_delete_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the deletion of an expense by number"""
-    lock = get_file_lock()
     try:
         choice = int(update.message.text)
         expenses = context.user_data.get("delete_expenses", [])
@@ -729,24 +703,21 @@ async def handle_delete_number(update: Update, context: ContextTypes.DEFAULT_TYP
             return
         
         # Get the row to delete
-        row_idx, row = expenses[choice - 1]
+        row = expenses[choice - 1]
+        expense_id = row['id']
         
-        # Load workbook and delete the row with file locking
-        with lock:
-            wb = openpyxl.load_workbook(EXCEL_FILE)
-            ws = wb.active
-            ws.delete_rows(row_idx)
-            
-            if not safe_save_workbook(wb):
-                raise Exception("Failed to save workbook")
+        # Delete from database
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM expenses WHERE id = ?", (expense_id,))
         
         # Show confirmation
         await update.message.reply_text(
             f"✅ Deleted expense:\n\n"
-            f"📋 Category: {row[ExcelColumns.CATEGORY].value}\n"
-            f"🏷️ Subcategory: {row[ExcelColumns.SUBCATEGORY].value}\n"
-            f"💵 Amount: €{row[ExcelColumns.AMOUNT].value:.2f}\n"
-            f"📝 Description: {row[ExcelColumns.DESCRIPTION].value}\n\n"
+            f"📋 Category: {row['category']}\n"
+            f"🏷️ Subcategory: {row['subcategory']}\n"
+            f"💵 Amount: €{row['amount']:.2f}\n"
+            f"📝 Description: {row['description']}\n\n"
             "Expense has been removed."
         )
         
@@ -796,23 +767,23 @@ async def handle_edit_number(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return
         
         # Store the selected expense for editing
-        row_idx, row = expenses[choice - 1]
-        context.user_data["edit_row_idx"] = row_idx
+        row = expenses[choice - 1]
+        context.user_data["edit_expense_id"] = row['id']
         context.user_data["edit_expense_data"] = {
-            "category": row[ExcelColumns.CATEGORY].value,
-            "subcategory": row[ExcelColumns.SUBCATEGORY].value,
-            "amount": row[ExcelColumns.AMOUNT].value,
-            "description": row[ExcelColumns.DESCRIPTION].value
+            "category": row['category'],
+            "subcategory": row['subcategory'],
+            "amount": row['amount'],
+            "description": row['description']
         }
         context.user_data.pop("edit_expenses", None)
         
         # Show what can be edited
         await update.message.reply_text(
             f"✏️ Editing expense:\n\n"
-            f"📋 Category: {row[ExcelColumns.CATEGORY].value}\n"
-            f"🏷️ Subcategory: {row[ExcelColumns.SUBCATEGORY].value}\n"
-            f"💵 Amount: €{row[ExcelColumns.AMOUNT].value:.2f}\n"
-            f"📝 Description: {row[ExcelColumns.DESCRIPTION].value}\n\n"
+            f"📋 Category: {row['category']}\n"
+            f"🏷️ Subcategory: {row['subcategory']}\n"
+            f"💵 Amount: €{row['amount']:.2f}\n"
+            f"📝 Description: {row['description']}\n\n"
             "What would you like to edit?\n"
             "Reply with:\n"
             "• 'amount' - Change the amount\n"
@@ -828,7 +799,7 @@ async def handle_edit_number(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await handle_error(update, e, "selecting expense for edit")
         # Clean up on error
         context.user_data.pop("edit_expenses", None)
-        context.user_data.pop("edit_row_idx", None)
+        context.user_data.pop("edit_expense_id", None)
         context.user_data.pop("edit_expense_data", None)
 
 
@@ -858,14 +829,13 @@ async def handle_edit_field_choice(update: Update, context: ContextTypes.DEFAULT
     except Exception as e:
         await handle_error(update, e, "handling edit field choice")
         # Clean up on error
-        context.user_data.pop("edit_row_idx", None)
+        context.user_data.pop("edit_expense_id", None)
         context.user_data.pop("edit_expense_data", None)
         context.user_data.pop("editing_field", None)
 
 
 async def handle_edit_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the new value for the edited field"""
-    lock = get_file_lock()
     try:
         field = context.user_data.get("editing_field")
         new_value = update.message.text
@@ -892,21 +862,23 @@ async def handle_edit_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
         
-        # Load workbook and update the expense with file locking
-        with lock:
-            wb = openpyxl.load_workbook(EXCEL_FILE)
-            ws = wb.active
-            row_idx = context.user_data["edit_row_idx"]
+        # Update database
+        expense_id = context.user_data["edit_expense_id"]
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
             
             if field == "amount":
-                ws.cell(row=row_idx, column=ExcelColumns.AMOUNT_WRITE).value = new_value
+                cursor.execute(
+                    "UPDATE expenses SET amount = ? WHERE id = ?",
+                    (new_value, expense_id)
+                )
                 context.user_data["edit_expense_data"]["amount"] = new_value
             elif field == "description":
-                ws.cell(row=row_idx, column=ExcelColumns.DESCRIPTION_WRITE).value = new_value
+                cursor.execute(
+                    "UPDATE expenses SET description = ? WHERE id = ?",
+                    (new_value, expense_id)
+                )
                 context.user_data["edit_expense_data"]["description"] = new_value
-            
-            if not safe_save_workbook(wb):
-                raise Exception("Failed to save workbook")
         
         # Show confirmation
         data = context.user_data["edit_expense_data"]
@@ -926,7 +898,7 @@ async def handle_edit_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_error(update, e, "updating expense")
     finally:
         # Always clear edit context
-        context.user_data.pop("edit_row_idx", None)
+        context.user_data.pop("edit_expense_id", None)
         context.user_data.pop("edit_expense_data", None)
         context.user_data.pop("editing_field", None)
 
@@ -1019,12 +991,11 @@ async def handle_date_input(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 async def view_expenses_for_date(update: Update, context: ContextTypes.DEFAULT_TYPE, target_date: str):
     """View expenses for a specific date"""
-    lock = get_file_lock()
     try:
-        expenses = get_expenses_for_date(target_date, lock, values_only=True)
+        expenses = get_entries_for_date(target_date, "expenses")
         
         if expenses:
-            total = sum(float(exp[ExcelColumns.AMOUNT]) for exp in expenses)
+            total = sum(row['amount'] for row in expenses)
             message = f"📊 Expenses for {target_date}:\n\n"
             for exp in expenses:
                 message += format_expense_line(exp) + "\n"
@@ -1044,9 +1015,8 @@ async def show_delete_for_date(update: Update, context: ContextTypes.DEFAULT_TYP
 
 def main():
     """Start the bot"""
-    # Initialize Excel files
-    init_excel()
-    init_income_excel()
+    # Initialize database
+    init_database()
     
     # Read bot token from environment variable or config
     BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")

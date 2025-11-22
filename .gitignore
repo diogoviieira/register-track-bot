@@ -30,10 +30,20 @@ CODE_REVIEW.md
 test_critical_fixes.py
 REPORTS
 
-# Excel files
+# Excel files (legacy - now using SQLite)
 expenses.xlsx
+incomes.xlsx
 *.xlsx
 *.xls
+*.backup
+
+# Database files
+finance_tracker.db
+*.db
+
+# Backup files
+bot_backup_excel.py
+test_bot_features.py
 
 # Environment variables
 .env
