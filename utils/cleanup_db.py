@@ -1,7 +1,8 @@
 """Safe database cleanup utility"""
 import sqlite3
+import os
 
-DB_FILE = 'finance_tracker.db'
+DB_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'finance_tracker.db')
 
 def get_connection():
     conn = sqlite3.connect(DB_FILE)

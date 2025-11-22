@@ -1,8 +1,9 @@
 """Interactive SQLite Database Browser for finance_tracker.db"""
 import sqlite3
 import sys
+import os
 
-DB_FILE = 'finance_tracker.db'
+DB_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'finance_tracker.db')
 
 def show_help():
     """Display help menu"""

@@ -7,7 +7,7 @@ Type=simple
 User=pi
 WorkingDirectory=/home/pi/register-track-bot
 Environment="TELEGRAM_BOT_TOKEN=your_token_here"
-ExecStart=/usr/bin/python3 /home/pi/register-track-bot/bot.py
+ExecStart=/usr/bin/python3 /home/pi/register-track-bot/run_bot.py
 Restart=always
 RestartSec=10
 

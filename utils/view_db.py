@@ -1,7 +1,9 @@
 """View database contents"""
 import sqlite3
+import os
 
-conn = sqlite3.connect('finance_tracker.db')
+DB_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'finance_tracker.db')
+conn = sqlite3.connect(DB_FILE)
 conn.row_factory = sqlite3.Row
 cursor = conn.cursor()
 

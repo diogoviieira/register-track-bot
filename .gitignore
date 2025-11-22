@@ -23,27 +23,17 @@ wheels/
 .installed.cfg
 *.egg
 
-#files
-Commands.md
-VERIFICATION_REPORT.md
-CODE_REVIEW.md
-test_critical_fixes.py
-REPORTS
-
-# Excel files (legacy - now using SQLite)
-expenses.xlsx
-incomes.xlsx
+# Data directory (database and backups)
+data/
+*.db
 *.xlsx
 *.xls
 *.backup
 
-# Database files
-finance_tracker.db
-*.db
-
-# Backup files
-bot_backup_excel.py
-test_bot_features.py
+# Backup and test files
+VERIFICATION_REPORT.md
+CODE_REVIEW.md
+test_critical_fixes.py
 
 # Environment variables
 .env

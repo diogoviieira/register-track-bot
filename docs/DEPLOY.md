@@ -38,6 +38,17 @@ Install Python dependencies:
 pip3 install -r requirements.txt
 ```
 
+The project structure:
+```
+register-track-bot/
+├── src/bot.py              # Main bot code
+├── utils/                  # Database management tools
+├── data/                   # Database storage (auto-created)
+├── config/                 # Configuration files
+├── run_bot.py              # Bot launcher
+└── requirements.txt
+```
+
 ## Step 3: Configure Bot Token
 
 Set your Telegram bot token as an environment variable:
@@ -52,7 +63,7 @@ export TELEGRAM_BOT_TOKEN="your_bot_token_here"
 
 Test run the bot to make sure everything works:
 ```bash
-python3 bot.py
+python3 run_bot.py
 ```
 
 If you see "Bot is running... Press Ctrl+C to stop.", the bot is working correctly. Test it in Telegram, then press Ctrl+C to stop.
@@ -61,14 +72,14 @@ If you see "Bot is running... Press Ctrl+C to stop.", the bot is working correct
 
 Edit the service file to add your bot token:
 ```bash
-nano register-bot.service
+nano config/register-bot.service
 ```
 
 Replace `your_token_here` with your actual Telegram bot token, then save and exit (Ctrl+X, Y, Enter).
 
 Copy service file to systemd directory:
 ```bash
-sudo cp register-bot.service /etc/systemd/system/
+sudo cp config/register-bot.service /etc/systemd/system/
 ```
 
 Reload systemd to recognize the new service:
@@ -138,17 +149,29 @@ sudo systemctl disable register-bot.service
 
 ## Database Management
 
-The bot uses SQLite database stored in `finance_tracker.db`.
+The bot uses SQLite database stored in `data/finance_tracker.db`.
+
+### View database with utilities:
+```bash
+# Interactive browser
+python3 utils/db_browser.py
+
+# Quick view
+python3 utils/view_db.py
+
+# Cleanup utility
+python3 utils/cleanup_db.py
+```
 
 ### Backup database:
 ```bash
-cp ~/register-track-bot/finance_tracker.db ~/finance_tracker_backup_$(date +%Y%m%d).db
+cp ~/register-track-bot/data/finance_tracker.db ~/finance_tracker_backup_$(date +%Y%m%d).db
 ```
 
-### View database contents (optional):
+### View database with SQLite (optional):
 ```bash
 sudo apt install sqlite3 -y
-sqlite3 ~/register-track-bot/finance_tracker.db
+sqlite3 ~/register-track-bot/data/finance_tracker.db
 ```
 
 In SQLite console:
@@ -192,7 +215,7 @@ sudo systemctl start register-bot.service
 4. Ensure internet connection is working
 
 ### Database errors?
-1. Check file permissions: `ls -l ~/register-track-bot/finance_tracker.db`
+1. Check file permissions: `ls -l ~/register-track-bot/data/finance_tracker.db`
 2. Ensure the bot has write permissions to the directory
 3. Try restarting the service
 
@@ -212,7 +235,7 @@ sudo systemctl start register-bot.service
    # Add to crontab for daily backups
    crontab -e
    # Add this line:
-   0 2 * * * cp ~/register-track-bot/finance_tracker.db ~/backups/finance_$(date +\%Y\%m\%d).db
+   0 2 * * * cp ~/register-track-bot/data/finance_tracker.db ~/backups/finance_$(date +\%Y\%m\%d).db
    ```
 
 3. **Keep your system updated**

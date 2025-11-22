@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 CATEGORY, SUBCATEGORY, AMOUNT, DESCRIPTION, DATE_INPUT, EDIT_FIELD = range(6)
 
 # Database file path
-DB_FILE = "finance_tracker.db"
+DB_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "finance_tracker.db")
 
 # Thread-local storage for database connections
 thread_local = threading.local()
