@@ -208,15 +208,15 @@ def format_expense_numbered(index: int, row) -> str:
     return f"{index}. {row['category']} > {row['subcategory']}: €{row['amount']:.2f} - {row['description']}"
 
 
-def get_entries_for_date(target_date: str, table: str = "expenses"):
-    """Load entries (expenses or incomes) for a specific date from database"""
+def get_entries_for_date(target_date: str, user_id: int, table: str = "expenses"):
+    """Load entries (expenses or incomes) for a specific date and user from database"""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(f"""
             SELECT * FROM {table}
-            WHERE date = ?
+            WHERE user_id = ? AND date = ?
             ORDER BY time DESC
-        """, (target_date,))
+        """, (user_id, target_date))
         return cursor.fetchall()
 
 
@@ -229,6 +229,7 @@ def init_database():
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS expenses (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
                 date TEXT NOT NULL,
                 time TEXT NOT NULL,
                 category TEXT NOT NULL,
@@ -243,6 +244,7 @@ def init_database():
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS incomes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
                 date TEXT NOT NULL,
                 time TEXT NOT NULL,
                 category TEXT NOT NULL,
@@ -254,14 +256,14 @@ def init_database():
         """)
         
         # Create indexes for better query performance
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_incomes_date ON incomes(date)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_expenses_user_date ON expenses(user_id, date)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_incomes_user_date ON incomes(user_id, date)")
         
         logger.info(f"Database initialized: {DB_FILE}")
 
 
-def save_expense(category: str, subcategory: str, amount: float, description: str, custom_date: str = None):
-    """Save expense or income to database"""
+def save_expense(category: str, subcategory: str, amount: float, description: str, user_id: int, custom_date: str = None):
+    """Save expense or income to database for specific user"""
     # Determine if this is an income or expense
     is_income = (category == "Incomes")
     table = "incomes" if is_income else "expenses"
@@ -277,14 +279,15 @@ def save_expense(category: str, subcategory: str, amount: float, description: st
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(f"""
-                INSERT INTO {table} (date, time, category, subcategory, amount, description)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (date_str, time_str, category, subcategory, amount, description))
+                INSERT INTO {table} (user_id, date, time, category, subcategory, amount, description)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (user_id, date_str, time_str, category, subcategory, amount, description))
             
             entry_type = "income" if is_income else "expense"
-            logger.info(f"Saved {entry_type}: {category} > {subcategory} - €{amount} on {date_str}")
+            logger.info(f"Saved {entry_type} for user {user_id}: {category} > {subcategory} - €{amount} on {date_str}")
             return True
     except Exception as e:
+        entry_type = "income" if is_income else "expense"
         logger.error(f"Error saving {entry_type}: {e}")
         return False
 
@@ -319,15 +322,16 @@ async def view_incomes_month(update: Update, context: ContextTypes.DEFAULT_TYPE)
         
         # Get current year
         current_year = datetime.now().year
+        user_id = update.effective_user.id
         
         # Query incomes from database
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT * FROM incomes
-                WHERE date LIKE ?
+                WHERE user_id = ? AND date LIKE ?
                 ORDER BY date, time
-            """, (f"{current_year}-{month_num}-%",))
+            """, (user_id, f"{current_year}-{month_num}-%"))
             incomes = cursor.fetchall()
         
         if incomes:
@@ -483,8 +487,9 @@ async def amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             subcategory = context.user_data.get("subcategory", "N/A")
             description = f"{category} - {subcategory}"
             target_date = context.user_data.get("target_date")
+            user_id = update.effective_user.id
             
-            if save_expense(category, subcategory, amount_value, description, target_date):
+            if save_expense(category, subcategory, amount_value, description, user_id, target_date):
                 await update.message.reply_text(
                     format_success_message(category, subcategory, amount_value, description, target_date)
                 )
@@ -518,8 +523,9 @@ async def description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     amount = context.user_data["amount"]
     description = update.message.text
     target_date = context.user_data.get("target_date")
+    user_id = update.effective_user.id
     
-    if save_expense(category, subcategory, amount, description, target_date):
+    if save_expense(category, subcategory, amount, description, user_id, target_date):
         await update.message.reply_text(
             format_success_message(category, subcategory, amount, description, target_date)
         )
@@ -533,10 +539,11 @@ async def description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 
 async def view_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """View today's expenses"""
+    """View today's expenses for current user"""
     try:
         today = get_today_date()
-        expenses = get_entries_for_date(today, "expenses")
+        user_id = update.effective_user.id
+        expenses = get_entries_for_date(today, user_id, "expenses")
         
         if expenses:
             total = sum(row['amount'] for row in expenses)
@@ -551,19 +558,20 @@ async def view_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await handle_error(update, e, "viewing expenses")
 async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Get expense summary by category"""
+    """Get expense summary by category for current user"""
     try:
         today = get_today_date()
+        user_id = update.effective_user.id
         
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT category, subcategory, SUM(amount) as total
                 FROM expenses
-                WHERE date = ?
+                WHERE user_id = ? AND date = ?
                 GROUP BY category, subcategory
                 ORDER BY category, subcategory
-            """, (today,))
+            """, (user_id, today))
             category_totals = cursor.fetchall()
         
         if category_totals:
@@ -611,15 +619,16 @@ async def view_month_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         # Get current year
         current_year = datetime.now().year
+        user_id = update.effective_user.id
         
         # Query expenses from database
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT * FROM expenses
-                WHERE date LIKE ?
+                WHERE user_id = ? AND date LIKE ?
                 ORDER BY date, time
-            """, (f"{current_year}-{month_num}-%",))
+            """, (user_id, f"{current_year}-{month_num}-%"))
             expenses = cursor.fetchall()
         
         if expenses:
@@ -658,9 +667,10 @@ async def show_expenses_for_action(
     action: str,
     user_data_key: str
 ):
-    """Generic function to show expenses for delete/edit actions"""
+    """Generic function to show expenses for delete/edit actions for current user"""
     try:
-        expenses = get_entries_for_date(target_date, "expenses")
+        user_id = update.effective_user.id
+        expenses = get_entries_for_date(target_date, user_id, "expenses")
         
         if not expenses:
             await update.message.reply_text(f"No expenses to {action} for {target_date}.")
@@ -705,11 +715,12 @@ async def handle_delete_number(update: Update, context: ContextTypes.DEFAULT_TYP
         # Get the row to delete
         row = expenses[choice - 1]
         expense_id = row['id']
+        user_id = update.effective_user.id
         
-        # Delete from database
+        # Delete from database (with user_id check for security)
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM expenses WHERE id = ?", (expense_id,))
+            cursor.execute("DELETE FROM expenses WHERE id = ? AND user_id = ?", (expense_id, user_id))
         
         # Show confirmation
         await update.message.reply_text(
@@ -862,21 +873,22 @@ async def handle_edit_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
         
-        # Update database
+        # Update database (with user_id check for security)
         expense_id = context.user_data["edit_expense_id"]
+        user_id = update.effective_user.id
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
             if field == "amount":
                 cursor.execute(
-                    "UPDATE expenses SET amount = ? WHERE id = ?",
-                    (new_value, expense_id)
+                    "UPDATE expenses SET amount = ? WHERE id = ? AND user_id = ?",
+                    (new_value, expense_id, user_id)
                 )
                 context.user_data["edit_expense_data"]["amount"] = new_value
             elif field == "description":
                 cursor.execute(
-                    "UPDATE expenses SET description = ? WHERE id = ?",
-                    (new_value, expense_id)
+                    "UPDATE expenses SET description = ? WHERE id = ? AND user_id = ?",
+                    (new_value, expense_id, user_id)
                 )
                 context.user_data["edit_expense_data"]["description"] = new_value
         
@@ -990,9 +1002,10 @@ async def handle_date_input(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 async def view_expenses_for_date(update: Update, context: ContextTypes.DEFAULT_TYPE, target_date: str):
-    """View expenses for a specific date"""
+    """View expenses for a specific date for current user"""
     try:
-        expenses = get_entries_for_date(target_date, "expenses")
+        user_id = update.effective_user.id
+        expenses = get_entries_for_date(target_date, user_id, "expenses")
         
         if expenses:
             total = sum(row['amount'] for row in expenses)
