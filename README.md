@@ -68,7 +68,7 @@ register-track-bot/
 
 ```
 /start      - Start the bot and see available commands
-/add    - Log a new expense
+/add        - Log a new expense
 /income     - Record income
 /view       - View entries for today or specific date
 /month      - View monthly summary
