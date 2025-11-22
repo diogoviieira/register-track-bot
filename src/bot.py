@@ -120,7 +120,7 @@ SUBCATEGORIES = {
     ],
     "Health": [
         ["Doctor", "Pharmacy"],
-        ["Hospital", "Gym"],
+        ["Hospital_Urgency", "Gym"],
         ["Supplements", "Other"]
     ],
     "Others": [
@@ -139,6 +139,7 @@ SUBCATEGORIES = {
 AUTO_DESCRIPTION = {
     "Home": ["Rent", "Light", "Water", "Net"],
     "Car": ["Fuel", "Insurance", "Via Verde"],
+    "Health": ["Doctor", "Pharmacy", "Gym", "Other"],
     "Streaming": "all",  # All subcategories in Streaming
     "Subscriptions": "all",  # All subcategories in Subscriptions
     "Incomes": ["Refeição", "Subsídio", "Bónus", "Salary"]  # All except Others
@@ -188,7 +189,8 @@ def format_success_message(category: str, subcategory: str, amount: float, descr
         f"🏷️ Subcategory: {subcategory}\n"
         f"💵 Amount: €{amount:.2f}\n"
         f"📝 Description: {description}\n\n"
-        "Use /add to add another expense or /view to see today's expenses."
+        "Use /add to add another expense or /view to see today's expenses.\n"
+        "Use /help to see all available commands."
     )
 
 
@@ -384,9 +386,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "** Incomes **\n"
         "/income <month> - View total incomes for a month\n"
         "Example: /income november or /income 11\n\n"
+        "** During a command **\n"
+        "/cancel - Cancel current operation\n\n"
         "** Other **\n"
         "/help - Show this help message\n"
-        "/cancel - Cancel current operation"
     )
 
 

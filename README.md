@@ -68,7 +68,7 @@ register-track-bot/
 
 ```
 /start      - Start the bot and see available commands
-/expense    - Log a new expense
+/add    - Log a new expense
 /income     - Record income
 /view       - View entries for today or specific date
 /month      - View monthly summary
@@ -79,7 +79,7 @@ register-track-bot/
 
 ### Example Workflow
 
-1. Start a conversation: `/expense`
+1. Start a conversation: `/add`
 2. Select category (e.g., "Home", "Car", "Food")
 3. Choose subcategory (e.g., "Rent", "Fuel", "Groceries")
 4. Enter amount: `45.50`

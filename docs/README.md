@@ -305,7 +305,7 @@ The bot will automatically start on boot and restart if it crashes!
 - **Streaming**: Prime, Netflix, Disney+, HBO
 - **Subscriptions**: Patreon, iCloud, Spotify, F1 TV, Telemóvel
 - **Needs**: Groceries, Clothing, Personal Care, Setup, Other
-- **Health**: Doctor, Pharmacy, Hospital, Gym, Supplements, Other
+- **Health**: Doctor, Pharmacy, Hospital_Urgency, Gym, Supplements, Other
 - **Others**: Gifts, Pet, Mi Mimei, Other
 - **Incomes**: Refeição, Subsídio, Bónus, Salary, Others
 
