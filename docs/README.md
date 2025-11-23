@@ -255,20 +255,6 @@ The bot creates a `finance_tracker.db` SQLite database with two tables:
 | 1  | 2025-11-01 | 09:00:00 | Incomes  | Salary      | 2000.00 | Incomes - Salary     | 2025-11-01 09:00:00 |
 | 2  | 2025-11-15 | 12:00:00 | Incomes  | Refeição    | 150.00  | Incomes - Refeição   | 2025-11-15 12:00:00 |
 
-## Raspberry Pi Deployment
-
-For 24/7 operation on Raspberry Pi, see the detailed deployment guide:
-👉 **[DEPLOY.md](DEPLOY.md)** - Complete Raspberry Pi setup instructions
-
-Quick summary:
-1. Clone repo to Raspberry Pi
-2. Install dependencies: `pip3 install -r requirements.txt`
-3. Set bot token in systemd service file
-4. Enable service: `sudo systemctl enable register-bot.service`
-5. Start service: `sudo systemctl start register-bot.service`
-
-The bot will automatically start on boot and restart if it crashes!
-
 ## Tips
 
 - The bot automatically creates the database on first run
@@ -357,7 +343,7 @@ sqlite3 finance_tracker.db ".backup finance_backup.db"
 Potential features to add:
 - Budget limits with alerts
 - Export to CSV/PDF
-- Charts and visualizations  
+- Charts and visualizations
 - Recurring expense templates
 - Year-over-year comparisons
 - Web dashboard interface
@@ -366,5 +352,3 @@ Potential features to add:
 Enjoy tracking your expenses! 💰📊
 
 ---
-
-**Made with ❤️ for Raspberry Pi deployment**

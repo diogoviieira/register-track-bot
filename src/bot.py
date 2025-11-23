@@ -585,7 +585,7 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 total = row['total']
                 grand_total += total
                 message += f"• {cat_key}: €{total:.2f}\n"
-            message += f"\n💰 Grand Total: €{grand_total:.2f}"
+            message += f"\n💰 Total: €{grand_total:.2f}"
         else:
             message = "No expenses recorded for today."
         
