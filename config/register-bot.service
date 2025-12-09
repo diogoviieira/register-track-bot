@@ -4,10 +4,10 @@ After=network.target
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/register-track-bot
+User=YOUR_USER
+WorkingDirectory=/home/YOUR_USER/register-track-bot
 Environment="TELEGRAM_BOT_TOKEN=your_token_here"
-ExecStart=/usr/bin/python3 /home/pi/register-track-bot/run_bot.py
+ExecStart=/home/YOUR_USER/register-track-bot/.venv/bin/python run_bot.py
 Restart=always
 RestartSec=10
 

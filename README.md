@@ -139,15 +139,37 @@ python utils/cleanup_db.py  # Maintenance
 
 ## 🚢 Deployment
 
-Designed for Raspberry Pi but works anywhere Python runs.
+Optimized for 24/7 operation on Linux, Windows, or cloud platforms.
 
-### Raspberry Pi Setup
+### Ubuntu / Debian (Recommended)
+
+```bash
+# Quick setup
+sudo apt update && sudo apt install python3 python3-venv git -y
+git clone https://github.com/diogoviieira/register-track-bot.git
+cd register-track-bot
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# Configure systemd service
+sudo nano /etc/systemd/system/telegram-bot.service
+# (See DEPLOY-UBUNTU.md for service file content)
+sudo systemctl enable telegram-bot
+sudo systemctl start telegram-bot
+```
+
+📖 **Full guide**: [docs/DEPLOY-UBUNTU.md](docs/DEPLOY-UBUNTU.md) ⭐ **Recommended for HP EliteDesk**
+
+### Raspberry Pi (Raspbian)
 
 ```bash
 # Clone and install
 git clone https://github.com/diogoviieira/register-track-bot.git
 cd register-track-bot
-pip3 install -r requirements.txt
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 
 # Configure service
 sudo cp config/register-bot.service /etc/systemd/system/
@@ -156,6 +178,26 @@ sudo systemctl start register-bot.service
 ```
 
 📖 **Full guide**: [docs/DEPLOY.md](docs/DEPLOY.md)
+
+### Windows (Mini PC)
+
+```powershell
+# Clone and install
+cd C:\
+git clone https://github.com/diogoviieira/register-track-bot.git
+cd register-track-bot
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+
+# Set bot token
+setx TELEGRAM_BOT_TOKEN "your_token_here"
+
+# Run bot
+python run_bot.py
+```
+
+📖 **Full guide**: [docs/DEPLOY-WINDOWS.md](docs/DEPLOY-WINDOWS.md)
 
 ### Docker (Coming Soon)
 
