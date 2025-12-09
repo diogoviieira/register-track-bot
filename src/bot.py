@@ -224,6 +224,11 @@ def get_entries_for_date(target_date: str, user_id: int, table: str = "expenses"
 
 def init_database():
     """Initialize SQLite database with expenses and incomes tables"""
+    # Ensure data directory exists
+    data_dir = os.path.dirname(DB_FILE)
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir)
+    
     with get_db_connection() as conn:
         cursor = conn.cursor()
         
