@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  telegram-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: register-track-bot
+    
+    # Restart policy for 24/7 operation
+    restart: unless-stopped
+    
+    # Environment variables from .env file
+    env_file:
+      - .env
+    
+    # Persistent storage for database
+    volumes:
+      - ./data:/app/data
+    
+    # Resource limits to prevent excessive consumption
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'        # Max 50% of one CPU core
+          memory: 256M       # Max 256MB RAM
+        reservations:
+          cpus: '0.1'        # Reserve 10% of one CPU core
+          memory: 64M        # Reserve 64MB RAM
+    
+    # Logging configuration to prevent disk fill-up
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"      # Max 10MB per log file
+        max-file: "3"        # Keep max 3 log files (30MB total)
+        compress: "true"     # Compress rotated logs
+    
+    # Network mode (host if needed for local access)
+    # network_mode: host
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "python.*run_bot.py"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+    
+    # Read-only root filesystem (except volumes)
+    # Uncomment if bot doesn't need to write outside /app/data
+    # read_only: true
+    
+    # Drop unnecessary capabilities
+    cap_drop:
+      - ALL
+    
+    # Add only required capabilities (if any)
+    # cap_add:
+    #   - NET_BIND_SERVICE

@@ -1,23 +1,39 @@
 # 💰 Telegram Finance Tracker Bot
 
-> A production-ready Telegram bot for personal finance management with multi-user support, built for reliability and ease of use.
+A Telegram bot for personal finance tracking with multi-user support. Track expenses and income through natural conversation, view monthly summaries, and manage your finances easily.
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Telegram Bot](https://img.shields.io/badge/Telegram-Bot-blue.svg?logo=telegram)](https://core.telegram.org/bots)
+[![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg?logo=docker)](https://www.docker.com/)
 
 ## ✨ Features
 
-- 💬 **Conversational Interface** - Natural conversation flow for logging expenses
-- 🏷️ **Smart Categorization** - Pre-defined categories with auto-descriptions for common expenses
-- 📊 **Multi-User Support** - Isolated data per user with secure access control
-- 💾 **SQLite Database** - Lightweight, reliable, and perfect for 24/7 operation
-- 🔍 **Powerful Queries** - View, edit, and analyze your expenses by date or month
-- 📈 **Monthly Summaries** - Track spending patterns with category breakdowns
-- 🛠️ **Management Tools** - Interactive browser, viewer, and cleanup utilities included
-- 🚀 **Production Ready** - Systemd service configuration for Raspberry Pi deployment
+- 💬 Conversational interface for logging expenses and income
+- 🏷️ Smart categorization with auto-suggestions
+- 📊 Multi-user support with isolated data
+- 💾 SQLite database for reliability
+- 📈 Monthly summaries and analytics
+- 🔍 Query and edit past transactions
+- 🐳 Docker ready for 24/7 operation
 
 ## 🚀 Quick Start
+
+### Docker Deployment (Recommended)
+
+```bash
+# Clone and configure
+git clone https://github.com/diogoviieira/register-track-bot.git
+cd register-track-bot
+cp .env.example .env
+
+# Add your bot token to .env
+nano .env
+
+# Deploy
+docker compose up -d
+```
+
+### Local Development
 
 ```bash
 # Clone the repository
@@ -33,111 +49,97 @@ source .venv/bin/activate  # Linux/Mac
 # Install dependencies
 pip install -r requirements.txt
 
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
 # Set your bot token
-export TELEGRAM_BOT_TOKEN="your_bot_token_here"  # Linux/Mac
-# Windows: $env:TELEGRAM_BOT_TOKEN="your_bot_token_here"
+export TELEGRAM_BOT_TOKEN="your_token_here"
 
-# Run the bot
+# Run
 python run_bot.py
-
-# Or without activating venv (use full path):
-# .venv/Scripts/python run_bot.py  (Windows)
-# .venv/bin/python run_bot.py      (Linux/Mac)
-```
-
-> **Windows Note**: If you get "running scripts is disabled", either:
-> - Use full path: `.venv\Scripts\python.exe run_bot.py`
-> - Or enable scripts once: `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`
-
-## 📁 Project Structure
-
-```
-register-track-bot/
-├── src/bot.py              # Main bot logic
-├── utils/                  # Database management tools
-├── tests/                  # Test suite
-├── docs/                   # Documentation
-├── config/                 # Configuration files
-├── data/                   # Database storage (auto-created)
-└── run_bot.py              # Entry point
 ```
 
 ## 📖 Usage
 
-### Basic Commands
+**Available Commands:**
+- `/start` - Start the bot
+- `/add` - Log an expense
+- `/income` - Record income
+- `/view` - View entries (today or specific date)
+- `/month` - Monthly summary
+- `/edit` - Modify entries
+- `/delete` - Remove entries
+- `/help` - Show all commands
 
+**Example:**
+1. `/add` → Select category → Choose subcategory
+2. Enter amount: `45.50`
+3. Add description (optional)
+4. Done! ✅
+
+## 🏗️ Tech Stack
+
+- **Framework**: python-telegram-bot 21.7
+- **Database**: SQLite (thread-safe)
+- **Deployment**: Docker + Docker Compose
+- **Requirements**: Python 3.8+
+
+## 📦 Environment Variables
+
+```env
+TELEGRAM_BOT_TOKEN=your_bot_token_here  # Required
+LOG_LEVEL=INFO                          # Optional (DEBUG, INFO, WARNING, ERROR)
+TZ=Europe/Lisbon                        # Optional (timezone)
 ```
-/start      - Start the bot and see available commands
-/add        - Log a new expense
-/income     - Record income
-/view       - View entries for today or specific date
-/month      - View monthly summary
-/edit       - Modify existing entries
-/delete     - Remove entries
-/help       - Show all commands
-```
 
-### Example Workflow
+## 🐳 Docker Details
 
-1. Start a conversation: `/add`
-2. Select category (e.g., "Home", "Car", "Food")
-3. Choose subcategory (e.g., "Rent", "Fuel", "Groceries")
-4. Enter amount: `45.50`
-5. Add description or skip (auto-filled for common items)
-6. Done! ✅
+The bot runs as a non-root user with:
+- Auto-restart on failure
+- Health checks every 60s
+- Log rotation (max 30MB)
+- Resource limits (256MB RAM, 50% CPU)
 
-### Monthly Overview
-
-```
-/month november
-```
-
-Get instant summaries with category breakdowns and totals.
-
-## 🏗️ Architecture
-
-- **Bot Framework**: python-telegram-bot 22.5
-- **Database**: SQLite with optimized indexes
-- **Design**: Conversation-based state management
-- **Security**: User ID-based data isolation
-- **Performance**: Thread-safe connections, ~20-30MB RAM
-
-## 🛠️ Database Tools
-
-Three built-in utilities for database management:
-
-| Tool | Purpose | Use Case |
-|------|---------|----------|
-| `db_browser.py` | Interactive browser | Query, search, export to CSV |
-| `view_db.py` | Quick viewer | Check stats and recent entries |
-| `cleanup_db.py` | Data cleanup | Remove test data, optimize DB |
-
+**Common Commands:**
 ```bash
-python utils/db_browser.py  # Full-featured browser
-python utils/view_db.py     # Quick overview
-python utils/cleanup_db.py  # Maintenance
+docker compose up -d              # Start
+docker compose logs -f            # View logs
+docker compose restart            # Restart
+docker compose down               # Stop
 ```
 
-## 🎯 Key Highlights
+## 📝 License
 
-### Production Ready
-- ✅ Systemd service for 24/7 uptime on Raspberry Pi
-- ✅ Automatic restart on failure
-- ✅ Comprehensive logging and monitoring
+MIT License - see [LICENSE](LICENSE) file
 
-### Developer Friendly
-- Clean, modular codebase
-- Well-documented functions
-- Comprehensive test suite
-- Easy to extend and customize
+## 🤝 Contributing
 
-### User Experience
+Contributions are welcome! Feel free to open issues or submit pull requests.
 - Intuitive conversation flow
 - Smart auto-completion
 - European date format support (DD/MM/YY)
 - Multi-language month recognition
 
 ## 🚢 Deployment
+
+### 🐳 Docker (Recommended for 24/7)
+
+**Best for**: Production servers, home servers, VPS, Raspberry Pi
+
+```bash
+# Quick deploy (5 minutes)
+cp .env.example .env && nano .env  # Add your TELEGRAM_BOT_TOKEN
+docker compose up -d
+```
+
+**Features**: Auto-restart, health monitoring, resource limits, log rotation, security hardening
+
+**Docs**: [Docker Guide](docs/DEPLOY-DOCKER.md) | [Quick Start](QUICKSTART-DOCKER.md) | [Quick Reference](QUICK-REFERENCE.md)
+
+---
+
+### 🍓 Traditional Deployment
 
 Optimized for 24/7 operation on Linux, Windows, or cloud platforms.
 
@@ -146,98 +148,7 @@ Optimized for 24/7 operation on Linux, Windows, or cloud platforms.
 ```bash
 # Quick setup
 sudo apt update && sudo apt install python3 python3-venv git -y
-git clone https://github.com/diogoviieira/register-track-bot.git
-cd register-track-bot
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# Configure systemd service
-sudo nano /etc/systemd/system/telegram-bot.service
-# (See DEPLOY-UBUNTU.md for service file content)
-sudo systemctl enable telegram-bot
-sudo systemctl start telegram-bot
-```
-
-📖 **Full guide**: [docs/DEPLOY-UBUNTU.md](docs/DEPLOY-UBUNTU.md) ⭐ **Recommended for HP EliteDesk**
-
-### Raspberry Pi (Raspbian)
-
-```bash
-# Clone and install
-git clone https://github.com/diogoviieira/register-track-bot.git
-cd register-track-bot
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# Configure service
-sudo cp config/register-bot.service /etc/systemd/system/
-sudo systemctl enable register-bot.service
-sudo systemctl start register-bot.service
-```
-
-📖 **Full guide**: [docs/DEPLOY.md](docs/DEPLOY.md)
-
-### Windows (Mini PC)
-
-```powershell
-# Clone and install
-cd C:\
-git clone https://github.com/diogoviieira/register-track-bot.git
-cd register-track-bot
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-
-# Set bot token
-setx TELEGRAM_BOT_TOKEN "your_token_here"
-
-# Run bot
-python run_bot.py
-```
-
-📖 **Full guide**: [docs/DEPLOY-WINDOWS.md](docs/DEPLOY-WINDOWS.md)
-
-### Docker (Coming Soon)
-
-```bash
-docker run -e TELEGRAM_BOT_TOKEN=your_token diogoviieira/finance-tracker
-```
-
-## 🧪 Testing
-
-```bash
-python tests/test_multiuser.py  # Multi-user isolation
-python tests/test_bot_features.py  # Feature tests
-```
-
-## 📚 Documentation
-
-- [Deployment Guide](docs/DEPLOY.md) - Raspberry Pi setup and systemd configuration
-- [Migration Notes](docs/MIGRATION.md) - Excel to SQLite migration details
-- [Contributing](docs/CONTRIBUTING.md) - Guidelines for contributors
-- [Commands Reference](docs/Commands.md) - Complete command documentation
-
-## 🤝 Contributing
-
-Contributions are welcome! Please read [CONTRIBUTING.md](docs/CONTRIBUTING.md) first.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 💬 Support
-
-Found a bug? Have a feature request? [Open an issue](https://github.com/diogoviieira/register-track-bot/issues)
-
 ---
 
-<p align="center">Made with ❤️ for personal finance management</p>
-<p align="center">Built with Python • Telegram Bot API • SQLite</p>
+<p align="center">Made with ❤️ for personal finance tracking</p>
+
