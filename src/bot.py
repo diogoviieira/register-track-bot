@@ -1,4 +1,6 @@
 import logging
+import sys
+import signal
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
     Application,
@@ -15,11 +17,20 @@ import sqlite3
 from contextlib import contextmanager
 import threading
 
-# Enable logging
+# Configure logging
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
 )
 logger = logging.getLogger(__name__)
+
+# Reduce telegram library verbosity
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("telegram").setLevel(logging.WARNING)
 
 # Conversation states
 CATEGORY, SUBCATEGORY, AMOUNT, DESCRIPTION, DATE_INPUT, EDIT_FIELD = range(6)
@@ -266,7 +277,7 @@ def init_database():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_expenses_user_date ON expenses(user_id, date)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_incomes_user_date ON incomes(user_id, date)")
         
-        logger.info(f"Database initialized: {DB_FILE}")
+        logger.debug(f"Database initialized: {DB_FILE}")
 
 
 def save_expense(category: str, subcategory: str, amount: float, description: str, user_id: int, custom_date: str = None):
@@ -291,7 +302,7 @@ def save_expense(category: str, subcategory: str, amount: float, description: st
             """, (user_id, date_str, time_str, category, subcategory, amount, description))
             
             entry_type = "income" if is_income else "expense"
-            logger.info(f"Saved {entry_type} for user {user_id}: {category} > {subcategory} - €{amount} on {date_str}")
+            logger.debug(f"Saved {entry_type} for user {user_id}: {category} > {subcategory} - €{amount} on {date_str}")
             return True
     except Exception as e:
         entry_type = "income" if is_income else "expense"
@@ -1036,22 +1047,25 @@ async def show_delete_for_date(update: Update, context: ContextTypes.DEFAULT_TYP
 
 def main():
     """Start the bot"""
-    # Initialize database
-    init_database()
-    
-    # Read bot token from environment variable or config
+    # Validate required environment variables
     BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
     
     if not BOT_TOKEN:
-        print("ERROR: Please set TELEGRAM_BOT_TOKEN environment variable")
-        print("\nSteps to get your bot token:")
-        print("1. Open Telegram and search for @BotFather")
-        print("2. Send /newbot command")
-        print("3. Follow the instructions to create your bot")
-        print("4. Copy the token and set it as environment variable:")
-        print("   Windows: setx TELEGRAM_BOT_TOKEN \"your-token-here\"")
-        print("   Linux/Mac: export TELEGRAM_BOT_TOKEN=\"your-token-here\"")
-        return
+        logger.error("FATAL: TELEGRAM_BOT_TOKEN environment variable not set")
+        logger.error("Get your token from @BotFather on Telegram")
+        logger.error("Then set: export TELEGRAM_BOT_TOKEN='your-token-here'")
+        sys.exit(1)
+    
+    if len(BOT_TOKEN) < 40 or ":" not in BOT_TOKEN:
+        logger.error("FATAL: TELEGRAM_BOT_TOKEN appears to be invalid (wrong format)")
+        sys.exit(1)
+    
+    # Initialize database
+    try:
+        init_database()
+    except Exception as e:
+        logger.error(f"FATAL: Failed to initialize database: {e}")
+        sys.exit(1)
     
     # Create application
     application = Application.builder().token(BOT_TOKEN).build()
@@ -1152,17 +1166,34 @@ def main():
     # Unknown command handler - must be last
     application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
     
+    # Setup graceful shutdown
+    def signal_handler(sig, frame):
+        logger.info("Shutdown signal received, stopping bot...")
+        sys.exit(0)
+    
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
+    # Global error handlers
+    def handle_exception(exc_type, exc_value, exc_traceback):
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
+        logger.critical("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
+        sys.exit(1)
+    
+    sys.excepthook = handle_exception
+    
     # Start the bot
-    print("Bot is running... Press Ctrl+C to stop.")
+    logger.info("Bot starting...")
     
-    # Python 3.14+ compatibility: use asyncio.run() wrapper
-    import asyncio
     try:
-        asyncio.get_event_loop()
-    except RuntimeError:
-        asyncio.set_event_loop(asyncio.new_event_loop())
-    
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+        application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+    except Exception as e:
+        logger.critical(f"FATAL: Bot crashed: {e}", exc_info=True)
+        sys.exit(1)
+    finally:
+        logger.info("Bot stopped")
 
 
 if __name__ == "__main__":
