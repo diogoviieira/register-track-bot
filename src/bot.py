@@ -10,12 +10,18 @@ from telegram.ext import (
     filters,
     ContextTypes,
 )
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import math
 import sqlite3
+import io
 from contextlib import contextmanager
 import threading
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 
 # Configure logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -33,7 +39,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("telegram").setLevel(logging.WARNING)
 
 # Conversation states
-CATEGORY, SUBCATEGORY, AMOUNT, DESCRIPTION, DATE_INPUT, EDIT_FIELD = range(6)
+CATEGORY, SUBCATEGORY, AMOUNT, DESCRIPTION, DATE_INPUT, EDIT_FIELD, PDF_PERIOD = range(7)
 
 # Database file path
 DB_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "finance_tracker.db")
@@ -222,6 +228,281 @@ def format_expense_numbered(index: int, row) -> str:
     return f"{index}. {row['category']} > {row['subcategory']}: €{row['amount']:.2f} - {row['description']}"
 
 
+def get_week_dates():
+    """Get start and end dates for the current week (Monday to Sunday)"""
+    today = datetime.now()
+    start_of_week = today - timedelta(days=today.weekday())
+    end_of_week = start_of_week + timedelta(days=6)
+    return start_of_week.strftime("%Y-%m-%d"), end_of_week.strftime("%Y-%m-%d")
+
+
+def get_month_dates():
+    """Get start and end dates for the current month"""
+    today = datetime.now()
+    start_of_month = today.replace(day=1)
+    # Get last day of month
+    if today.month == 12:
+        end_of_month = today.replace(year=today.year + 1, month=1, day=1) - timedelta(days=1)
+    else:
+        end_of_month = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
+    return start_of_month.strftime("%Y-%m-%d"), end_of_month.strftime("%Y-%m-%d")
+
+
+def get_year_dates():
+    """Get start and end dates for the current year"""
+    today = datetime.now()
+    start_of_year = today.replace(month=1, day=1)
+    end_of_year = today.replace(month=12, day=31)
+    return start_of_year.strftime("%Y-%m-%d"), end_of_year.strftime("%Y-%m-%d")
+
+
+def get_entries_for_period(start_date: str, end_date: str, user_id: int, table: str = "expenses"):
+    """Get entries between two dates for a user"""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(f"""
+            SELECT * FROM {table}
+            WHERE user_id = ? AND date >= ? AND date <= ?
+            ORDER BY date DESC, time DESC
+        """, (user_id, start_date, end_date))
+        return cursor.fetchall()
+
+
+def generate_pdf_report(expenses: list, incomes: list, period_name: str, start_date: str, end_date: str) -> io.BytesIO:
+    """Generate a PDF report with expenses and incomes"""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=20*mm, bottomMargin=20*mm)
+    styles = getSampleStyleSheet()
+    elements = []
+    
+    # Title style
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=18,
+        spaceAfter=20,
+        alignment=1  # Center
+    )
+    
+    # Header style
+    header_style = ParagraphStyle(
+        'CustomHeader',
+        parent=styles['Heading2'],
+        fontSize=14,
+        spaceAfter=10,
+        textColor=colors.darkblue
+    )
+    
+    # Add title
+    title = Paragraph(f"📊 Financial Report - {period_name}", title_style)
+    elements.append(title)
+    
+    # Add period info
+    period_info = Paragraph(f"Period: {start_date} to {end_date}", styles['Normal'])
+    elements.append(period_info)
+    elements.append(Spacer(1, 10*mm))
+    
+    # Calculate totals
+    total_expenses = sum(row['amount'] for row in expenses) if expenses else 0
+    total_incomes = sum(row['amount'] for row in incomes) if incomes else 0
+    balance = total_incomes - total_expenses
+    
+    # Summary section
+    summary_header = Paragraph("💰 Summary", header_style)
+    elements.append(summary_header)
+    
+    summary_data = [
+        ['Category', 'Amount'],
+        ['Total Incomes', f"€{total_incomes:.2f}"],
+        ['Total Expenses', f"€{total_expenses:.2f}"],
+        ['Balance', f"€{balance:.2f}"]
+    ]
+    
+    summary_table = Table(summary_data, colWidths=[100*mm, 50*mm])
+    summary_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.lightblue),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.darkblue),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+        ('BACKGROUND', (0, 1), (-1, 1), colors.lightgreen),
+        ('BACKGROUND', (0, 2), (-1, 2), colors.lightsalmon),
+        ('BACKGROUND', (0, 3), (-1, 3), colors.lightyellow if balance >= 0 else colors.lightcoral),
+        ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+    ]))
+    elements.append(summary_table)
+    elements.append(Spacer(1, 10*mm))
+    
+    # Expenses by category
+    if expenses:
+        expenses_header = Paragraph("📉 Expenses by Category", header_style)
+        elements.append(expenses_header)
+        
+        # Group by category
+        category_totals = {}
+        for row in expenses:
+            cat = row['category']
+            category_totals[cat] = category_totals.get(cat, 0) + row['amount']
+        
+        cat_data = [['Category', 'Total']]
+        for cat, total in sorted(category_totals.items(), key=lambda x: x[1], reverse=True):
+            cat_data.append([cat, f"€{total:.2f}"])
+        
+        cat_table = Table(cat_data, colWidths=[100*mm, 50*mm])
+        cat_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.coral),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.whitesmoke, colors.white]),
+        ]))
+        elements.append(cat_table)
+        elements.append(Spacer(1, 8*mm))
+        
+        # Detailed expenses
+        expenses_detail_header = Paragraph("📋 Expense Details", header_style)
+        elements.append(expenses_detail_header)
+        
+        exp_data = [['Date', 'Category', 'Subcategory', 'Amount', 'Description']]
+        for row in expenses:
+            exp_data.append([
+                row['date'],
+                row['category'],
+                row['subcategory'],
+                f"€{row['amount']:.2f}",
+                row['description'][:25] + '...' if len(row['description']) > 25 else row['description']
+            ])
+        
+        exp_table = Table(exp_data, colWidths=[25*mm, 30*mm, 30*mm, 22*mm, 43*mm])
+        exp_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.darkred),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.whitesmoke, colors.white]),
+        ]))
+        elements.append(exp_table)
+        elements.append(Spacer(1, 10*mm))
+    
+    # Incomes section
+    if incomes:
+        incomes_header = Paragraph("📈 Income Details", header_style)
+        elements.append(incomes_header)
+        
+        inc_data = [['Date', 'Category', 'Subcategory', 'Amount', 'Description']]
+        for row in incomes:
+            inc_data.append([
+                row['date'],
+                row['category'],
+                row['subcategory'],
+                f"€{row['amount']:.2f}",
+                row['description'][:25] + '...' if len(row['description']) > 25 else row['description']
+            ])
+        
+        inc_table = Table(inc_data, colWidths=[25*mm, 30*mm, 30*mm, 22*mm, 43*mm])
+        inc_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.darkgreen),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.honeydew, colors.white]),
+        ]))
+        elements.append(inc_table)
+    
+    # Footer
+    elements.append(Spacer(1, 15*mm))
+    footer = Paragraph(f"Generated on {datetime.now().strftime('%Y-%m-%d %H:%M')}", 
+                       ParagraphStyle('Footer', parent=styles['Normal'], fontSize=8, textColor=colors.grey, alignment=1))
+    elements.append(footer)
+    
+    # Build PDF
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
+
+async def pdf_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Start PDF export conversation"""
+    keyboard = [
+        ["📅 This Week", "📆 This Month"],
+        ["📊 This Year", "❌ Cancel"]
+    ]
+    
+    await update.message.reply_text(
+        "📄 *PDF Export*\n\n"
+        "Choose the period for your financial report:",
+        parse_mode="Markdown",
+        reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+    )
+    return PDF_PERIOD
+
+
+async def handle_pdf_period(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle PDF period selection and generate report"""
+    choice = update.message.text.strip()
+    user_id = update.effective_user.id
+    
+    if "Cancel" in choice:
+        await update.message.reply_text("❌ PDF export cancelled.", reply_markup=ReplyKeyboardRemove())
+        return ConversationHandler.END
+    
+    # Determine period
+    if "Week" in choice:
+        start_date, end_date = get_week_dates()
+        period_name = "This Week"
+    elif "Month" in choice:
+        start_date, end_date = get_month_dates()
+        period_name = datetime.now().strftime("%B %Y")
+    elif "Year" in choice:
+        start_date, end_date = get_year_dates()
+        period_name = str(datetime.now().year)
+    else:
+        await update.message.reply_text("❌ Invalid option. Please try again with /pdf")
+        return ConversationHandler.END
+    
+    await update.message.reply_text("⏳ Generating PDF report...", reply_markup=ReplyKeyboardRemove())
+    
+    try:
+        # Get data
+        expenses = get_entries_for_period(start_date, end_date, user_id, "expenses")
+        incomes = get_entries_for_period(start_date, end_date, user_id, "incomes")
+        
+        if not expenses and not incomes:
+            await update.message.reply_text(f"📭 No data found for {period_name}.")
+            return ConversationHandler.END
+        
+        # Generate PDF
+        pdf_buffer = generate_pdf_report(expenses, incomes, period_name, start_date, end_date)
+        
+        # Create filename
+        filename = f"finance_report_{period_name.lower().replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf"
+        
+        # Send PDF
+        await update.message.reply_document(
+            document=pdf_buffer,
+            filename=filename,
+            caption=f"📊 *Financial Report - {period_name}*\n\n"
+                   f"📅 Period: {start_date} to {end_date}\n"
+                   f"📉 Expenses: {len(expenses)} entries\n"
+                   f"📈 Incomes: {len(incomes)} entries",
+            parse_mode="Markdown"
+        )
+        
+        logger.info(f"PDF report generated for user {user_id}: {period_name}")
+        
+    except Exception as e:
+        logger.error(f"Error generating PDF: {e}")
+        await update.message.reply_text("❌ Error generating PDF. Please try again.")
+    
+    return ConversationHandler.END
+
+
 def get_entries_for_date(target_date: str, user_id: int, table: str = "expenses"):
     """Load entries (expenses or incomes) for a specific date and user from database"""
     with get_db_connection() as conn:
@@ -403,6 +684,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "** Incomes **\n"
         "/income <month> - View total incomes for a month\n"
         "Example: /income november or /income 11\n\n"
+        "** Export **\n"
+        "/pdf - Export PDF report (week/month/year)\n\n"
         "** During a command **\n"
         "/cancel - Cancel current operation\n\n"
         "** Other **\n"
@@ -1115,10 +1398,20 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel)],
     )
     
+    # Conversation handler for PDF export
+    pdf_handler = ConversationHandler(
+        entry_points=[CommandHandler("pdf", pdf_command)],
+        states={
+            PDF_PERIOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_pdf_period)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+    
     application.add_handler(conv_handler)
     application.add_handler(view_date_handler)
     application.add_handler(delete_date_handler)
     application.add_handler(edit_date_handler)
+    application.add_handler(pdf_handler)
     application.add_handler(CommandHandler("view", view_expenses))
     application.add_handler(CommandHandler("month", view_month_expenses))
     application.add_handler(CommandHandler("income", view_incomes_month))
