@@ -39,7 +39,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("telegram").setLevel(logging.WARNING)
 
 # Conversation states
-CATEGORY, SUBCATEGORY, AMOUNT, DESCRIPTION, DATE_INPUT, EDIT_FIELD, PDF_PERIOD = range(7)
+CATEGORY, SUBCATEGORY, AMOUNT, DESCRIPTION, DATE_INPUT, EDIT_FIELD, PDF_PERIOD, PDF_MONTH, PDF_YEAR = range(9)
 
 # Database file path
 DB_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "finance_tracker.db")
@@ -268,6 +268,65 @@ def get_entries_for_period(start_date: str, end_date: str, user_id: int, table: 
         return cursor.fetchall()
 
 
+def get_available_months(user_id: int) -> list:
+    """Get list of months that have data for a user (from both expenses and incomes)"""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        # Get unique year-month combinations from both tables
+        cursor.execute("""
+            SELECT DISTINCT substr(date, 1, 7) as month FROM expenses WHERE user_id = ?
+            UNION
+            SELECT DISTINCT substr(date, 1, 7) as month FROM incomes WHERE user_id = ?
+            ORDER BY month DESC
+        """, (user_id, user_id))
+        results = cursor.fetchall()
+        return [row[0] for row in results]  # Returns list like ['2026-01', '2025-12', ...]
+
+
+def get_available_years(user_id: int) -> list:
+    """Get list of years that have data for a user"""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT DISTINCT substr(date, 1, 4) as year FROM expenses WHERE user_id = ?
+            UNION
+            SELECT DISTINCT substr(date, 1, 4) as year FROM incomes WHERE user_id = ?
+            ORDER BY year DESC
+        """, (user_id, user_id))
+        results = cursor.fetchall()
+        return [row[0] for row in results]  # Returns list like ['2026', '2025', ...]
+
+
+def get_month_date_range(year_month: str) -> tuple:
+    """Get start and end dates for a specific month (YYYY-MM format)"""
+    year, month = int(year_month[:4]), int(year_month[5:7])
+    start_date = f"{year_month}-01"
+    # Get last day of month
+    if month == 12:
+        end_date = f"{year}-12-31"
+    else:
+        next_month = datetime(year, month + 1, 1)
+        last_day = (next_month - timedelta(days=1)).day
+        end_date = f"{year_month}-{last_day:02d}"
+    return start_date, end_date
+
+
+def get_year_date_range(year: str) -> tuple:
+    """Get start and end dates for a specific year"""
+    return f"{year}-01-01", f"{year}-12-31"
+
+
+def format_month_for_display(year_month: str) -> str:
+    """Format YYYY-MM to readable format like 'January 2026'"""
+    year, month = year_month[:4], year_month[5:7]
+    month_names = {
+        '01': 'January', '02': 'February', '03': 'March', '04': 'April',
+        '05': 'May', '06': 'June', '07': 'July', '08': 'August',
+        '09': 'September', '10': 'October', '11': 'November', '12': 'December'
+    }
+    return f"{month_names.get(month, month)} {year}"
+
+
 def generate_pdf_report(expenses: list, incomes: list, period_name: str, start_date: str, end_date: str) -> io.BytesIO:
     """Generate a PDF report with expenses and incomes"""
     buffer = io.BytesIO()
@@ -430,8 +489,8 @@ def generate_pdf_report(expenses: list, incomes: list, period_name: str, start_d
 async def pdf_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start PDF export conversation"""
     keyboard = [
-        ["📅 This Week", "📆 This Month"],
-        ["📊 This Year", "❌ Cancel"]
+        ["📅 This Week", "📆 Choose Month"],
+        ["📊 Choose Year", "❌ Cancel"]
     ]
     
     await update.message.reply_text(
@@ -444,7 +503,7 @@ async def pdf_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_pdf_period(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle PDF period selection and generate report"""
+    """Handle PDF period selection"""
     choice = update.message.text.strip()
     user_id = update.effective_user.id
     
@@ -452,20 +511,127 @@ async def handle_pdf_period(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ PDF export cancelled.", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
     
-    # Determine period
+    # Week - generate immediately
     if "Week" in choice:
         start_date, end_date = get_week_dates()
         period_name = "This Week"
+        return await generate_and_send_pdf(update, user_id, start_date, end_date, period_name)
+    
+    # Month - show available months
     elif "Month" in choice:
-        start_date, end_date = get_month_dates()
-        period_name = datetime.now().strftime("%B %Y")
+        available_months = get_available_months(user_id)
+        
+        if not available_months:
+            await update.message.reply_text(
+                "📭 No data found. Start tracking your expenses first!",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            return ConversationHandler.END
+        
+        # Create keyboard with available months (max 12 for display)
+        keyboard = []
+        for i in range(0, min(len(available_months), 12), 2):
+            row = [format_month_for_display(available_months[i])]
+            if i + 1 < len(available_months):
+                row.append(format_month_for_display(available_months[i + 1]))
+            keyboard.append(row)
+        keyboard.append(["❌ Cancel"])
+        
+        # Store mapping for later use
+        context.user_data['month_mapping'] = {
+            format_month_for_display(m): m for m in available_months
+        }
+        
+        await update.message.reply_text(
+            "📆 *Select Month*\n\n"
+            "Choose a month with recorded data:",
+            parse_mode="Markdown",
+            reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+        )
+        return PDF_MONTH
+    
+    # Year - show available years
     elif "Year" in choice:
-        start_date, end_date = get_year_dates()
-        period_name = str(datetime.now().year)
+        available_years = get_available_years(user_id)
+        
+        if not available_years:
+            await update.message.reply_text(
+                "📭 No data found. Start tracking your expenses first!",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            return ConversationHandler.END
+        
+        # Create keyboard with available years
+        keyboard = []
+        for i in range(0, len(available_years), 2):
+            row = [f"📊 {available_years[i]}"]
+            if i + 1 < len(available_years):
+                row.append(f"📊 {available_years[i + 1]}")
+            keyboard.append(row)
+        keyboard.append(["❌ Cancel"])
+        
+        await update.message.reply_text(
+            "📊 *Select Year*\n\n"
+            "Choose a year with recorded data:",
+            parse_mode="Markdown",
+            reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+        )
+        return PDF_YEAR
+    
     else:
         await update.message.reply_text("❌ Invalid option. Please try again with /pdf")
         return ConversationHandler.END
+
+
+async def handle_pdf_month(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle month selection for PDF"""
+    choice = update.message.text.strip()
+    user_id = update.effective_user.id
     
+    if "Cancel" in choice:
+        await update.message.reply_text("❌ PDF export cancelled.", reply_markup=ReplyKeyboardRemove())
+        context.user_data.pop('month_mapping', None)
+        return ConversationHandler.END
+    
+    # Get the YYYY-MM format from mapping
+    month_mapping = context.user_data.get('month_mapping', {})
+    year_month = month_mapping.get(choice)
+    
+    if not year_month:
+        await update.message.reply_text("❌ Invalid month. Please try again with /pdf")
+        return ConversationHandler.END
+    
+    start_date, end_date = get_month_date_range(year_month)
+    period_name = choice  # Already formatted like "January 2026"
+    
+    context.user_data.pop('month_mapping', None)
+    return await generate_and_send_pdf(update, user_id, start_date, end_date, period_name)
+
+
+async def handle_pdf_year(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle year selection for PDF"""
+    choice = update.message.text.strip()
+    user_id = update.effective_user.id
+    
+    if "Cancel" in choice:
+        await update.message.reply_text("❌ PDF export cancelled.", reply_markup=ReplyKeyboardRemove())
+        return ConversationHandler.END
+    
+    # Extract year from choice (e.g., "📊 2026" -> "2026")
+    year = choice.replace("📊 ", "").strip()
+    
+    if not year.isdigit() or len(year) != 4:
+        await update.message.reply_text("❌ Invalid year. Please try again with /pdf")
+        return ConversationHandler.END
+    
+    start_date, end_date = get_year_date_range(year)
+    period_name = year
+    
+    return await generate_and_send_pdf(update, user_id, start_date, end_date, period_name)
+
+
+async def generate_and_send_pdf(update: Update, user_id: int, start_date: str, end_date: str, period_name: str):
+    """Generate and send PDF report"""
     await update.message.reply_text("⏳ Generating PDF report...", reply_markup=ReplyKeyboardRemove())
     
     try:
@@ -1403,6 +1569,8 @@ def main():
         entry_points=[CommandHandler("pdf", pdf_command)],
         states={
             PDF_PERIOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_pdf_period)],
+            PDF_MONTH: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_pdf_month)],
+            PDF_YEAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_pdf_year)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
