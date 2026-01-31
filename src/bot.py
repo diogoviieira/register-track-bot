@@ -98,7 +98,8 @@ SUBCATEGORIES = {
     "Home": [
         ["Rent", "Light"],
         ["Water", "Net"],
-        ["Me Mimei", "Other"]
+        ["Groceries", "Me Mimei"],
+        ["Other"]
     ],
     "Car": [
         ["Fuel", "Insurance"],
@@ -106,9 +107,9 @@ SUBCATEGORIES = {
         ["Via Verde", "Other"]
     ],
     "Lazer": [
-        ["Entertainment", "Dining Out"],
-        ["Movies/Shows", "Hobbies"],
-        ["Coffees", "Other"]
+        ["Dining Out", "Movies/Shows"],
+        ["Hobbies", "Coffees"],
+        ["Other"]
     ],
     "Travel": [
         ["Flights", "Hotels"],
@@ -117,7 +118,7 @@ SUBCATEGORIES = {
     ],
     "Streaming": [
         ["Prime", "Netflix"],
-        ["Disney+", "HBO"]
+        ["Disney+", "Crunchyroll"]
     ],
     "Subscriptions": [
         ["Patreon", "iCloud"],
@@ -125,8 +126,7 @@ SUBCATEGORIES = {
         ["Telemóvel", "Other"]
     ],
     "Needs": [
-        ["Groceries", "Clothing"],
-        ["Personal Care", "Setup"],
+        ["Clothing", "Personal Care"],
         ["Other"]
     ],
     "Health": [
@@ -136,24 +136,25 @@ SUBCATEGORIES = {
     ],
     "Others": [
         ["Gifts", "Pet"],
-        ["Mi Mimei", "Other"]
+        ["Mi Mimei", "Maomao"],
+        ["Other"]
     ],
     "Incomes": [
         ["Refeição", "Subsídio"],
         ["Bónus", "Salary"],
-        ["Others"]
+        ["Interest", "Others"]
     ]
 }
 
 # Categories/subcategories that don't need description input
 # Description will be auto-filled as "Category - Subcategory"
 AUTO_DESCRIPTION = {
-    "Home": ["Rent", "Light", "Water", "Net"],
+    "Home": ["Rent", "Light", "Water", "Net", "Groceries"],
     "Car": ["Fuel", "Insurance", "Via Verde"],
     "Health": ["Doctor", "Pharmacy", "Gym", "Other"],
     "Streaming": "all",  # All subcategories in Streaming
     "Subscriptions": "all",  # All subcategories in Subscriptions
-    "Incomes": ["Refeição", "Subsídio", "Bónus", "Salary"]  # All except Others
+    "Incomes": ["Refeição", "Subsídio", "Bónus", "Interest", "Salary"]  # All except Others
 }
 
 
