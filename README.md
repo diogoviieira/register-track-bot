@@ -142,13 +142,18 @@ python run_bot.py
 Generate professional financial reports directly in Telegram:
 
 ```
-/pdf → Choose period → Receive PDF file
+/pdf → Choose period → Select specific month/year → Receive PDF
 ```
 
-**Options:**
-- 📅 **This Week** - Current week (Monday to Sunday)
-- 📆 **This Month** - Current month
-- 📊 **This Year** - Full year report
+**Step 1 - Choose Period Type:**
+- 📅 **This Week** - Generates immediately (current week)
+- 📆 **Choose Month** - Shows list of months with data
+- 📊 **Choose Year** - Shows list of years with data
+
+**Step 2 - Select Specific Period:**
+- For **Month**: Select from available months (e.g., "January 2026", "December 2025")
+- For **Year**: Select from available years (e.g., "2026", "2025")
+- Only periods with recorded data are shown!
 
 **Report includes:**
 - 💰 Summary (Total Income, Expenses, Balance)
