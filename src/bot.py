@@ -161,7 +161,7 @@ AUTO_DESCRIPTION = {
     "Health": ["Doctor", "Pharmacy", "Gym", "Other"],
     "Streaming": "all",  # All subcategories in Streaming
     "Subscriptions": "all",  # All subcategories in Subscriptions
-    "Incomes": ["Refeição", "Subsídio", "Bónus", "Interest", "Salary"]  # All except Others
+    "Incomes": ["Refeição", "Subsídio", "Bónus", "Salary"]
 }
 
 
@@ -834,6 +834,77 @@ async def view_incomes_month(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await handle_error(update, e, "viewing month incomes")
 
 
+async def view_expenses_month(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """View expenses for a specific month"""
+    try:
+        # Parse the command to get month name or number
+        message_text = update.message.text.lower()
+        
+        # Extract month from command (e.g., "/expense november" or "/expense 11")
+        parts = message_text.split()
+        if len(parts) < 2:
+            await update.message.reply_text(
+                "📅 Please specify a month.\n\n"
+                "Examples:\n"
+                "/expense november\n"
+                "/expense 11\n"
+                "/expense novembro"
+            )
+            return
+        
+        month_input = parts[1]
+        month_num = MONTH_MAPPINGS.get(month_input)
+        
+        if not month_num:
+            await update.message.reply_text(
+                "❌ Invalid month. Please use month name or number (1-12).\n\n"
+                "Examples: /expense november or /expense 11"
+            )
+            return
+        
+        # Get current year
+        current_year = datetime.now().year
+        user_id = update.effective_user.id
+        
+        # Query expenses from database
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM expenses
+                WHERE user_id = ? AND date LIKE ?
+                ORDER BY date, time
+            """, (user_id, f"{current_year}-{month_num}-%"))
+            expenses = cursor.fetchall()
+        
+        if expenses:
+            total = 0.0
+            category_totals = {}
+            
+            for row in expenses:
+                amount = row['amount']
+                total += amount
+                
+                # Track category > subcategory totals
+                key = f"{row['category']} > {row['subcategory']}"
+                category_totals[key] = category_totals.get(key, 0) + amount
+            
+            message = f"💸 Expenses for {MONTH_NAMES[month_num]} {current_year}:\n\n"
+            message += f"📋 By Category:\n"
+            for cat, cat_total in sorted(category_totals.items()):
+                message += f"  • {cat}: €{cat_total:.2f}\n"
+            
+            message += f"\n💰 Total Expenses: €{total:.2f}\n"
+            message += f"📝 {len(expenses)} expense(s) recorded"
+        else:
+            await update.message.reply_text(f"No expenses recorded for {month_input.capitalize()} {current_year}.")
+            return
+        
+        await update.message.reply_text(message)
+        
+    except Exception as e:
+        await handle_error(update, e, "viewing month expenses")
+
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show help message with all available commands"""
     await update.message.reply_text(
@@ -851,9 +922,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/view_d - View expenses for a specific date\n"
         "/edit_d - Edit expense from a specific date\n"
         "/delete_d - Delete expense from a specific date\n\n"
-        "** Monthly Overview **\n"
-        "/month <name> - Quick view for a month\n"
+        "** Quick Views by Month **\n"
+        "/expense <month> - View expenses only for a month\n"
         "/income <month> - View incomes only for a month\n"
+        "Example: /expense february or /income 2\n\n"
+        "** Combined View **\n"
+        "/month <name> - View summary (expenses + incomes + balance)\n"
         "Example: /month february or /month 2\n\n"
         "** Export **\n"
         "/pdf - Export PDF report (week/month/year)\n\n"
@@ -935,7 +1009,7 @@ async def amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         # Validate amount
         if not math.isfinite(amount_value):
             await update.message.reply_text(
-                "❌ Invalid amount. Please enter a valid number:"
+                "❌ Invalid amount. Please enter a valid number (use . as decimal separator):"
             )
             return AMOUNT
         
@@ -983,7 +1057,7 @@ async def amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             return DESCRIPTION
     except ValueError:
         await update.message.reply_text(
-            "Please enter a valid number for the amount:"
+            "Please enter a valid number for the amount (use . as decimal separator):"
         )
         return AMOUNT
 
@@ -1908,6 +1982,7 @@ def main():
     application.add_handler(summary_handler)
     application.add_handler(CommandHandler("view", view_expenses))
     application.add_handler(CommandHandler("month", view_month_expenses))
+    application.add_handler(CommandHandler("expense", view_expenses_month))
     application.add_handler(CommandHandler("income", view_incomes_month))
     application.add_handler(CommandHandler("edit", edit_expense))
     application.add_handler(CommandHandler("delete", delete_expense))
