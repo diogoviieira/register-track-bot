@@ -954,7 +954,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def add_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start adding a new expense"""
-    # Clear any previous conversation state
+    # Clear any previous conversation state and notify if there was an active command
+    if context.user_data:
+        await update.message.reply_text("⚠️ Previous command cancelled automatically.")
     context.user_data.clear()
     
     await update.message.reply_text(
@@ -1886,7 +1888,9 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def add_expense_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start adding an expense for a specific date"""
-    # Clear any previous conversation state
+    # Clear any previous conversation state and notify if there was an active command
+    if context.user_data:
+        await update.message.reply_text("⚠️ Previous command cancelled automatically.")
     context.user_data.clear()
     context.user_data["adding_for_date"] = True
     
@@ -1898,7 +1902,9 @@ async def add_expense_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 async def view_expenses_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """View expenses for a specific date"""
-    # Clear any previous conversation state
+    # Clear any previous conversation state and notify if there was an active command
+    if context.user_data:
+        await update.message.reply_text("⚠️ Previous command cancelled automatically.")
     context.user_data.clear()
     context.user_data["viewing_date"] = True
     
@@ -1910,7 +1916,9 @@ async def view_expenses_date(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def delete_expense_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Delete expense for a specific date"""
-    # Clear any previous conversation state
+    # Clear any previous conversation state and notify if there was an active command
+    if context.user_data:
+        await update.message.reply_text("⚠️ Previous command cancelled automatically.")
     context.user_data.clear()
     context.user_data["deleting_for_date"] = True
     
@@ -2032,6 +2040,7 @@ def main():
             DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, description)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        per_message=False,
     )
     
     # Conversation handler for viewing specific date
@@ -2041,6 +2050,7 @@ def main():
             DATE_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_date_input)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        per_message=False,
     )
     
     # Conversation handler for deleting from specific date
@@ -2050,6 +2060,7 @@ def main():
             DATE_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_date_input)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        per_message=False,
     )
     
     # Conversation handler for editing from specific date
@@ -2059,6 +2070,7 @@ def main():
             DATE_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_date_input)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        per_message=False,
     )
     
     # Conversation handler for PDF export
@@ -2070,6 +2082,7 @@ def main():
             PDF_YEAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_pdf_year)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        per_message=False,
     )
     
     # Conversation handler for Summary
@@ -2082,6 +2095,7 @@ def main():
             SUMMARY_DAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_summary_day)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        per_message=False,
     )
     
     application.add_handler(conv_handler)
