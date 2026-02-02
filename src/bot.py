@@ -493,6 +493,9 @@ def generate_pdf_report(expenses: list, incomes: list, period_name: str, start_d
 
 async def pdf_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start PDF export conversation"""
+    # Clear any previous conversation state
+    context.user_data.clear()
+    
     keyboard = [
         ["📅 This Week", "📆 Choose Month"],
         ["📊 Choose Year", "❌ Cancel"]
@@ -951,6 +954,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def add_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start adding a new expense"""
+    # Clear any previous conversation state
+    context.user_data.clear()
+    
     await update.message.reply_text(
         "Let's add a new entry! 💰\n\n"
         "Please select a category:",
@@ -1110,6 +1116,9 @@ async def view_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start the summary conversation - show period selection"""
+    # Clear any previous conversation state
+    context.user_data.clear()
+    
     keyboard = [
         ["📅 Today", "📆 Specific Day"],
         ["📊 Month", "📈 Year"],
@@ -1603,10 +1612,13 @@ async def edit_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def edit_expense_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Edit expense for a specific date"""
+    # Clear any previous conversation state
+    context.user_data.clear()
+    context.user_data["editing_for_date"] = True
+    
     await update.message.reply_text(
         DATE_FORMAT_PROMPT.format(action="to edit an expense")
     )
-    context.user_data["editing_for_date"] = True
     return DATE_INPUT
 
 
@@ -1779,28 +1791,37 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def add_expense_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start adding an expense for a specific date"""
+    # Clear any previous conversation state
+    context.user_data.clear()
+    context.user_data["adding_for_date"] = True
+    
     await update.message.reply_text(
         DATE_FORMAT_PROMPT.format(action="for the expense")
     )
-    context.user_data["adding_for_date"] = True
     return DATE_INPUT
 
 
 async def view_expenses_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """View expenses for a specific date"""
+    # Clear any previous conversation state
+    context.user_data.clear()
+    context.user_data["viewing_date"] = True
+    
     await update.message.reply_text(
         DATE_FORMAT_PROMPT.format(action="to view expenses")
     )
-    context.user_data["viewing_date"] = True
     return DATE_INPUT
 
 
 async def delete_expense_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Delete expense for a specific date"""
+    # Clear any previous conversation state
+    context.user_data.clear()
+    context.user_data["deleting_for_date"] = True
+    
     await update.message.reply_text(
         DATE_FORMAT_PROMPT.format(action="to delete an expense")
     )
-    context.user_data["deleting_for_date"] = True
     return DATE_INPUT
 
 
