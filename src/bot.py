@@ -1035,10 +1035,10 @@ async def amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         
         # Check if we should skip description
         if context.user_data.get("skip_description", False):
-            # Auto-fill description and save directly
+            # Auto-fill description with N/A and save directly
             category = context.user_data["category"]
             subcategory = context.user_data.get("subcategory", "N/A")
-            description = f"{category} - {subcategory}"
+            description = "N/A"
             target_date = context.user_data.get("target_date")
             user_id = update.effective_user.id
             
