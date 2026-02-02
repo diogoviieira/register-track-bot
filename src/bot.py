@@ -1,6 +1,7 @@
 import logging
 import sys
 import signal
+import re
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
     Application,
@@ -39,7 +40,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("telegram").setLevel(logging.WARNING)
 
 # Conversation states
-CATEGORY, SUBCATEGORY, AMOUNT, DESCRIPTION, DATE_INPUT, EDIT_FIELD, PDF_PERIOD, PDF_MONTH, PDF_YEAR = range(9)
+CATEGORY, SUBCATEGORY, AMOUNT, DESCRIPTION, DATE_INPUT, EDIT_FIELD, PDF_PERIOD, PDF_MONTH, PDF_YEAR, SUMMARY_PERIOD, SUMMARY_MONTH, SUMMARY_YEAR, SUMMARY_DAY = range(13)
 
 # Database file path
 DB_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "finance_tracker.db")
@@ -198,16 +199,20 @@ def get_db_connection():
         raise
 
 
-def format_success_message(category: str, subcategory: str, amount: float, description: str, target_date: str = None) -> str:
-    """Format a standardized success message for saved expenses"""
+def format_success_message(category: str, subcategory: str, amount: float, description: str, target_date: str = None, is_income: bool = False) -> str:
+    """Format a standardized success message for saved expenses/incomes"""
     date_msg = f" for {target_date}" if target_date else ""
+    entry_type = "Income" if is_income else "Expense"
+    emoji = "💵" if is_income else "💸"
+    next_cmd = "/add" if not is_income else "/add"
+    
     return (
-        f"✅ Expense saved successfully{date_msg}!\n\n"
+        f"✅ {entry_type} saved successfully{date_msg}!\n\n"
         f"📋 Category: {category}\n"
         f"🏷️ Subcategory: {subcategory}\n"
-        f"💵 Amount: €{amount:.2f}\n"
+        f"{emoji} Amount: €{amount:.2f}\n"
         f"📝 Description: {description}\n\n"
-        "Use /add to add another expense or /view to see today's expenses.\n"
+        f"Use {next_cmd} to add another entry or /view to see today's entries.\n"
         "Use /help to see all available commands."
     )
 
@@ -833,28 +838,27 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show help message with all available commands"""
     await update.message.reply_text(
         "📋 **Available Commands:**\n\n"
-        "** Today's Expenses **\n"
-        "/add - Add expense for today\n"
+        "** Add Entries **\n"
+        "/add - Add expense or income for today\n"
+        "/add_d - Add expense or income for a specific date\n\n"
+        "** View & Summary **\n"
         "/view - View today's expenses\n"
-        "/summary - Get today's summary\n"
+        "/summary - Interactive summary (day/month/year)\n\n"
+        "** Edit & Delete (Today) **\n"
         "/edit - Edit an expense from today\n"
-        "/delete - Delete today's expense\n\n"
-        "** Specific Date Operations **\n"
-        "/add_d - Add expense for a specific date\n"
+        "/delete - Delete an expense from today\n\n"
+        "** Specific Date **\n"
         "/view_d - View expenses for a specific date\n"
         "/edit_d - Edit expense from a specific date\n"
         "/delete_d - Delete expense from a specific date\n\n"
         "** Monthly Overview **\n"
-        "/month <name> - View expenses for a month\n"
-        "Example: /month november or /month 11\n\n"
-        "** Incomes **\n"
-        "/income <month> - View total incomes for a month\n"
-        "Example: /income november or /income 11\n\n"
+        "/month <name> - Quick view for a month\n"
+        "/income <month> - View incomes only for a month\n"
+        "Example: /month february or /month 2\n\n"
         "** Export **\n"
         "/pdf - Export PDF report (week/month/year)\n\n"
-        "** During a command **\n"
-        "/cancel - Cancel current operation\n\n"
         "** Other **\n"
+        "/cancel - Cancel current operation\n"
         "/help - Show this help message\n"
     )
 
@@ -862,10 +866,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start the conversation and ask for expense category"""
     await update.message.reply_text(
-        "Hi! I'm your Daddy, i will register your money moves. 📊\n\n"
-        "I'll help you not wasting all your money on Putas e Vinho verde.\n\n"
+        "👋 Welcome to your Expense & Income Tracker! 📊\n\n"
+        "I'll help you track your finances easily.\n\n"
         "Use /help to see all available commands.\n\n"
-        "Let's add an expense! Please select a category:",
+        "Let's add an entry! Please select a category:",
         reply_markup=ReplyKeyboardMarkup(CATEGORIES, one_time_keyboard=True),
     )
     return CATEGORY
@@ -874,7 +878,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def add_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start adding a new expense"""
     await update.message.reply_text(
-        "Let's add a new expense! 💰\n\n"
+        "Let's add a new entry! 💰\n\n"
         "Please select a category:",
         reply_markup=ReplyKeyboardMarkup(CATEGORIES, one_time_keyboard=True),
     )
@@ -958,13 +962,14 @@ async def amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             target_date = context.user_data.get("target_date")
             user_id = update.effective_user.id
             
+            is_income = (category == "Incomes")
             if save_expense(category, subcategory, amount_value, description, user_id, target_date):
                 await update.message.reply_text(
-                    format_success_message(category, subcategory, amount_value, description, target_date)
+                    format_success_message(category, subcategory, amount_value, description, target_date, is_income)
                 )
             else:
                 await update.message.reply_text(
-                    "❌ Sorry, there was an error saving your expense. Please try again."
+                    "❌ Sorry, there was an error saving your entry. Please try again."
                 )
             
             context.user_data.clear()
@@ -993,14 +998,15 @@ async def description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     description = update.message.text
     target_date = context.user_data.get("target_date")
     user_id = update.effective_user.id
+    is_income = (category == "Incomes")
     
     if save_expense(category, subcategory, amount, description, user_id, target_date):
         await update.message.reply_text(
-            format_success_message(category, subcategory, amount, description, target_date)
+            format_success_message(category, subcategory, amount, description, target_date, is_income)
         )
     else:
         await update.message.reply_text(
-            "❌ Sorry, there was an error saving your expense. Please try again."
+            "❌ Sorry, there was an error saving your entry. Please try again."
         )
     
     context.user_data.clear()
@@ -1026,38 +1032,306 @@ async def view_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(message)
     except Exception as e:
         await handle_error(update, e, "viewing expenses")
-async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Get expense summary by category for current user"""
-    try:
-        today = get_today_date()
-        user_id = update.effective_user.id
+
+
+async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Start the summary conversation - show period selection"""
+    keyboard = [
+        ["📅 Today", "📆 Specific Day"],
+        ["📊 Month", "📈 Year"],
+        ["❌ Cancel"]
+    ]
+    
+    await update.message.reply_text(
+        "📊 *Financial Summary*\n\n"
+        "Choose the period you want to view:",
+        parse_mode="Markdown",
+        reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+    )
+    return SUMMARY_PERIOD
+
+
+async def handle_summary_period(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle summary period selection"""
+    choice = update.message.text.strip()
+    user_id = update.effective_user.id
+    
+    if "Cancel" in choice:
+        await update.message.reply_text("❌ Summary cancelled.", reply_markup=ReplyKeyboardRemove())
+        return ConversationHandler.END
+    
+    # Today - generate immediately
+    if "Today" in choice:
+        return await generate_and_send_summary(update, user_id, "today")
+    
+    # Specific Day - ask for date
+    elif "Specific Day" in choice:
+        await update.message.reply_text(
+            "📅 *Select a Date*\n\n"
+            "Enter the date in one of these formats:\n"
+            "• `DD/MM` (current year)\n"
+            "• `DD/MM/YYYY`\n"
+            "• `YYYY-MM-DD`\n\n"
+            "Example: `15/02` or `15/02/2026`",
+            parse_mode="Markdown",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return SUMMARY_DAY
+    
+    # Month - show available months
+    elif "Month" in choice:
+        available_months = get_available_months(user_id)
         
+        if not available_months:
+            await update.message.reply_text(
+                "📭 No data found. Start tracking your finances first!",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            return ConversationHandler.END
+        
+        # Create keyboard with available months (max 12 for display)
+        keyboard = []
+        for i in range(0, min(len(available_months), 12), 2):
+            row = [format_month_for_display(available_months[i])]
+            if i + 1 < len(available_months):
+                row.append(format_month_for_display(available_months[i + 1]))
+            keyboard.append(row)
+        keyboard.append(["❌ Cancel"])
+        
+        # Store mapping for later use
+        context.user_data['summary_month_mapping'] = {
+            format_month_for_display(m): m for m in available_months
+        }
+        
+        await update.message.reply_text(
+            "📆 *Select Month*\n\n"
+            "Choose a month with recorded data:",
+            parse_mode="Markdown",
+            reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+        )
+        return SUMMARY_MONTH
+    
+    # Year - show available years
+    elif "Year" in choice:
+        available_years = get_available_years(user_id)
+        
+        if not available_years:
+            await update.message.reply_text(
+                "📭 No data found. Start tracking your finances first!",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            return ConversationHandler.END
+        
+        # Create keyboard with available years
+        keyboard = []
+        for i in range(0, len(available_years), 2):
+            row = [f"📊 {available_years[i]}"]
+            if i + 1 < len(available_years):
+                row.append(f"📊 {available_years[i + 1]}")
+            keyboard.append(row)
+        keyboard.append(["❌ Cancel"])
+        
+        await update.message.reply_text(
+            "📊 *Select Year*\n\n"
+            "Choose a year with recorded data:",
+            parse_mode="Markdown",
+            reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+        )
+        return SUMMARY_YEAR
+    
+    else:
+        await update.message.reply_text("❌ Invalid option. Please try again with /summary")
+        return ConversationHandler.END
+
+
+async def handle_summary_day(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle specific day input for summary"""
+    date_input = update.message.text.strip()
+    user_id = update.effective_user.id
+    
+    # Parse date in various formats
+    target_date = None
+    current_year = datetime.now().year
+    
+    try:
+        # Try DD/MM format (current year)
+        if re.match(r'^\d{1,2}/\d{1,2}$', date_input):
+            day, month = date_input.split('/')
+            target_date = f"{current_year}-{int(month):02d}-{int(day):02d}"
+        # Try DD/MM/YYYY format
+        elif re.match(r'^\d{1,2}/\d{1,2}/\d{4}$', date_input):
+            day, month, year = date_input.split('/')
+            target_date = f"{year}-{int(month):02d}-{int(day):02d}"
+        # Try YYYY-MM-DD format
+        elif re.match(r'^\d{4}-\d{2}-\d{2}$', date_input):
+            target_date = date_input
+        else:
+            await update.message.reply_text(
+                "❌ Invalid date format.\n\n"
+                "Please use: `DD/MM`, `DD/MM/YYYY`, or `YYYY-MM-DD`\n"
+                "Example: `15/02` or `15/02/2026`",
+                parse_mode="Markdown"
+            )
+            return SUMMARY_DAY
+        
+        # Validate date exists
+        datetime.strptime(target_date, "%Y-%m-%d")
+        
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Invalid date. Please enter a valid date.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return SUMMARY_DAY
+    
+    return await generate_and_send_summary(update, user_id, "day", target_date)
+
+
+async def handle_summary_month(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle month selection for summary"""
+    choice = update.message.text.strip()
+    user_id = update.effective_user.id
+    
+    if "Cancel" in choice:
+        await update.message.reply_text("❌ Summary cancelled.", reply_markup=ReplyKeyboardRemove())
+        context.user_data.pop('summary_month_mapping', None)
+        return ConversationHandler.END
+    
+    # Get the YYYY-MM format from mapping
+    month_mapping = context.user_data.get('summary_month_mapping', {})
+    year_month = month_mapping.get(choice)
+    
+    if not year_month:
+        await update.message.reply_text("❌ Invalid month. Please try again with /summary")
+        return ConversationHandler.END
+    
+    context.user_data.pop('summary_month_mapping', None)
+    return await generate_and_send_summary(update, user_id, "month", year_month)
+
+
+async def handle_summary_year(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle year selection for summary"""
+    choice = update.message.text.strip()
+    user_id = update.effective_user.id
+    
+    if "Cancel" in choice:
+        await update.message.reply_text("❌ Summary cancelled.", reply_markup=ReplyKeyboardRemove())
+        return ConversationHandler.END
+    
+    # Extract year from choice (e.g., "📊 2026" -> "2026")
+    year = choice.replace("📊 ", "").strip()
+    
+    if not year.isdigit() or len(year) != 4:
+        await update.message.reply_text("❌ Invalid year. Please try again with /summary")
+        return ConversationHandler.END
+    
+    return await generate_and_send_summary(update, user_id, "year", year)
+
+
+async def generate_and_send_summary(update: Update, user_id: int, period_type: str, period_value: str = None) -> int:
+    """Generate and send financial summary for the specified period"""
+    try:
+        # Determine date range based on period type
+        if period_type == "today":
+            start_date = end_date = get_today_date()
+            period_name = f"Today ({start_date})"
+        elif period_type == "day":
+            start_date = end_date = period_value
+            period_name = f"{period_value}"
+        elif period_type == "month":
+            start_date, end_date = get_month_date_range(period_value)
+            period_name = format_month_for_display(period_value)
+        elif period_type == "year":
+            start_date, end_date = get_year_date_range(period_value)
+            period_name = period_value
+        else:
+            await update.message.reply_text("❌ Invalid period type.", reply_markup=ReplyKeyboardRemove())
+            return ConversationHandler.END
+        
+        # Get expenses grouped by category
         with get_db_connection() as conn:
             cursor = conn.cursor()
+            
+            # Expenses by category
             cursor.execute("""
-                SELECT category, subcategory, SUM(amount) as total
+                SELECT category, subcategory, SUM(amount) as total, COUNT(*) as count
                 FROM expenses
-                WHERE user_id = ? AND date = ?
+                WHERE user_id = ? AND date >= ? AND date <= ?
                 GROUP BY category, subcategory
                 ORDER BY category, subcategory
-            """, (user_id, today))
-            category_totals = cursor.fetchall()
+            """, (user_id, start_date, end_date))
+            expense_totals = cursor.fetchall()
+            
+            # Incomes by category
+            cursor.execute("""
+                SELECT category, subcategory, SUM(amount) as total, COUNT(*) as count
+                FROM incomes
+                WHERE user_id = ? AND date >= ? AND date <= ?
+                GROUP BY category, subcategory
+                ORDER BY category, subcategory
+            """, (user_id, start_date, end_date))
+            income_totals = cursor.fetchall()
         
-        if category_totals:
-            message = f"📈 Today's Summary ({today}):\n\n"
-            grand_total = 0.0
-            for row in category_totals:
+        # Check if there's any data
+        if not expense_totals and not income_totals:
+            await update.message.reply_text(
+                f"📭 No records found for {period_name}.",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            return ConversationHandler.END
+        
+        # Build message
+        message = f"📊 *Summary for {period_name}*\n\n"
+        
+        # Expenses section
+        if expense_totals:
+            expense_grand_total = 0.0
+            expense_count = 0
+            message += "💸 *Expenses:*\n"
+            for row in expense_totals:
                 cat_key = f"{row['category']} > {row['subcategory']}"
                 total = row['total']
-                grand_total += total
-                message += f"• {cat_key}: €{total:.2f}\n"
-            message += f"\n💰 Total: €{grand_total:.2f}"
+                count = row['count']
+                expense_grand_total += total
+                expense_count += count
+                message += f"  • {cat_key}: €{total:.2f} ({count})\n"
+            message += f"  📝 *Total:* €{expense_grand_total:.2f} ({expense_count} entries)\n\n"
         else:
-            message = "No expenses recorded for today."
+            expense_grand_total = 0.0
+            message += "💸 *Expenses:* €0.00\n\n"
         
-        await update.message.reply_text(message)
+        # Incomes section
+        if income_totals:
+            income_grand_total = 0.0
+            income_count = 0
+            message += "💵 *Incomes:*\n"
+            for row in income_totals:
+                cat_key = f"{row['category']} > {row['subcategory']}"
+                total = row['total']
+                count = row['count']
+                income_grand_total += total
+                income_count += count
+                message += f"  • {cat_key}: €{total:.2f} ({count})\n"
+            message += f"  📝 *Total:* €{income_grand_total:.2f} ({income_count} entries)\n\n"
+        else:
+            income_grand_total = 0.0
+            message += "💵 *Incomes:* €0.00\n\n"
+        
+        # Balance
+        balance = income_grand_total - expense_grand_total
+        balance_emoji = "📈" if balance >= 0 else "📉"
+        balance_text = f"+€{balance:.2f}" if balance >= 0 else f"-€{abs(balance):.2f}"
+        message += f"{balance_emoji} *Balance:* {balance_text}"
+        
+        await update.message.reply_text(message, parse_mode="Markdown", reply_markup=ReplyKeyboardRemove())
+        
     except Exception as e:
-        await handle_error(update, e, "getting summary")
+        logger.error(f"Error generating summary: {e}")
+        await update.message.reply_text("❌ Error generating summary. Please try again.", reply_markup=ReplyKeyboardRemove())
+    
+    return ConversationHandler.END
+
+
 async def view_month_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """View expenses for a specific month"""
     try:
@@ -1090,7 +1364,7 @@ async def view_month_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE
         current_year = datetime.now().year
         user_id = update.effective_user.id
         
-        # Query expenses from database
+        # Query expenses and incomes from database
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -1099,29 +1373,62 @@ async def view_month_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE
                 ORDER BY date, time
             """, (user_id, f"{current_year}-{month_num}-%"))
             expenses = cursor.fetchall()
+            
+            cursor.execute("""
+                SELECT * FROM incomes
+                WHERE user_id = ? AND date LIKE ?
+                ORDER BY date, time
+            """, (user_id, f"{current_year}-{month_num}-%"))
+            incomes = cursor.fetchall()
         
+        if not expenses and not incomes:
+            await update.message.reply_text(f"No records for {month_input.capitalize()} {current_year}.")
+            return
+        
+        message = f"📊 Summary for {MONTH_NAMES[month_num]} {current_year}:\n\n"
+        
+        # Expenses section
         if expenses:
-            total = 0.0
-            category_totals = {}
+            expense_total = 0.0
+            expense_categories = {}
             
             for row in expenses:
                 amount = row['amount']
-                total += amount
-                
-                # Track category totals
+                expense_total += amount
                 key = f"{row['category']} > {row['subcategory']}"
-                category_totals[key] = category_totals.get(key, 0) + amount
+                expense_categories[key] = expense_categories.get(key, 0) + amount
             
-            message = f"📊 Expenses for {MONTH_NAMES[month_num]} {current_year}:\n\n"
-            message += f"📋 By Category:\n"
-            for cat, cat_total in sorted(category_totals.items()):
+            message += f"💸 Expenses:\n"
+            for cat, cat_total in sorted(expense_categories.items()):
                 message += f"  • {cat}: €{cat_total:.2f}\n"
-            
-            message += f"\n💰 Total: €{total:.2f}\n"
-            message += f"📝 {len(expenses)} expense(s) recorded"
+            message += f"  📝 Total: €{expense_total:.2f} ({len(expenses)} entries)\n\n"
         else:
-            await update.message.reply_text(f"No expenses recorded for {month_input.capitalize()} {current_year}.")
-            return
+            expense_total = 0.0
+            message += f"💸 Expenses: €0.00\n\n"
+        
+        # Incomes section
+        if incomes:
+            income_total = 0.0
+            income_categories = {}
+            
+            for row in incomes:
+                amount = row['amount']
+                income_total += amount
+                key = f"{row['category']} > {row['subcategory']}"
+                income_categories[key] = income_categories.get(key, 0) + amount
+            
+            message += f"💵 Incomes:\n"
+            for cat, cat_total in sorted(income_categories.items()):
+                message += f"  • {cat}: €{cat_total:.2f}\n"
+            message += f"  📝 Total: €{income_total:.2f} ({len(incomes)} entries)\n\n"
+        else:
+            income_total = 0.0
+            message += f"💵 Incomes: €0.00\n\n"
+        
+        # Balance
+        balance = income_total - expense_total
+        balance_emoji = "📈" if balance >= 0 else "📉"
+        message += f"{balance_emoji} Balance: €{balance:.2f}"
         
         await update.message.reply_text(message)
         
@@ -1535,6 +1842,7 @@ def main():
             DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, description)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        allow_reentry=True,
     )
     
     # Conversation handler for viewing specific date
@@ -1544,6 +1852,7 @@ def main():
             DATE_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_date_input)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        allow_reentry=True,
     )
     
     # Conversation handler for deleting from specific date
@@ -1553,6 +1862,7 @@ def main():
             DATE_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_date_input)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        allow_reentry=True,
     )
     
     # Conversation handler for editing from specific date
@@ -1562,6 +1872,7 @@ def main():
             DATE_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_date_input)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        allow_reentry=True,
     )
     
     # Conversation handler for PDF export
@@ -1573,6 +1884,20 @@ def main():
             PDF_YEAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_pdf_year)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        allow_reentry=True,
+    )
+    
+    # Conversation handler for Summary
+    summary_handler = ConversationHandler(
+        entry_points=[CommandHandler("summary", summary_command)],
+        states={
+            SUMMARY_PERIOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_summary_period)],
+            SUMMARY_MONTH: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_summary_month)],
+            SUMMARY_YEAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_summary_year)],
+            SUMMARY_DAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_summary_day)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+        allow_reentry=True,
     )
     
     application.add_handler(conv_handler)
@@ -1580,10 +1905,10 @@ def main():
     application.add_handler(delete_date_handler)
     application.add_handler(edit_date_handler)
     application.add_handler(pdf_handler)
+    application.add_handler(summary_handler)
     application.add_handler(CommandHandler("view", view_expenses))
     application.add_handler(CommandHandler("month", view_month_expenses))
     application.add_handler(CommandHandler("income", view_incomes_month))
-    application.add_handler(CommandHandler("summary", summary))
     application.add_handler(CommandHandler("edit", edit_expense))
     application.add_handler(CommandHandler("delete", delete_expense))
     
@@ -1619,7 +1944,7 @@ def main():
     # Handle unknown commands
     async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
-            "Burro, you can use /help to get a list of all the available commands !"
+            "Use /help to see all available commands."
         )
     
     # Help command handler
