@@ -1553,42 +1553,91 @@ async def show_expenses_for_action(
         context.user_data.pop(user_data_key, None)
 
 
-async def delete_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show today's expenses and allow user to delete one"""
+async def handle_edit_or_delete_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle selection of Expenses or Incomes for edit/delete"""
+    choice = update.message.text.strip()
     today = get_today_date()
-    await show_expenses_for_action(update, context, today, "delete", "delete_expenses")
+    user_id = update.effective_user.id
+    
+    if "Cancel" in choice:
+        await update.message.reply_text("❌ Cancelled.", reply_markup=ReplyKeyboardRemove())
+        return
+    
+    # Determine table and action
+    is_delete = context.user_data.get("delete_action") == "delete"
+    is_edit = context.user_data.get("edit_action") == "edit"
+    action = "delete" if is_delete else "edit"
+    
+    if "Expenses" in choice:
+        table = "expenses"
+        entries = get_entries_for_date(today, user_id, table)
+        data_key = "delete_entries" if is_delete else "edit_entries"
+        entry_type = "Expense"
+    elif "Incomes" in choice:
+        table = "incomes"
+        entries = get_entries_for_date(today, user_id, table)
+        data_key = "delete_entries" if is_delete else "edit_entries"
+        entry_type = "Income"
+    else:
+        await update.message.reply_text("❌ Invalid choice. Please try /edit or /delete again.")
+        return
+    
+    if not entries:
+        await update.message.reply_text(
+            f"No {entry_type.lower()}s recorded for today.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return
+    
+    # Store table info for later operations
+    context.user_data["target_table"] = table
+    context.user_data["entry_type"] = entry_type
+    
+    # Build message with appropriate emoji
+    emoji = "🗑️" if is_delete else "✏️"
+    message = f"{emoji} {entry_type}s for {today}:\n\n"
+    
+    for i, row in enumerate(entries, start=1):
+        message += format_expense_numbered(i, row) + "\n"
+    
+    message += f"\nReply with the number (1-{len(entries)}) to {action}, or /cancel to abort."
+    
+    context.user_data[data_key] = entries
+    await update.message.reply_text(message, reply_markup=ReplyKeyboardRemove())
 
 
 async def handle_delete_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle the deletion of an expense by number"""
+    """Handle the deletion of an entry (expense or income) by number"""
     try:
         choice = int(update.message.text)
-        expenses = context.user_data.get("delete_expenses", [])
+        entries = context.user_data.get("delete_entries", [])
+        table = context.user_data.get("target_table", "expenses")
+        entry_type = context.user_data.get("entry_type", "Expense")
         
-        if not expenses or choice < 1 or choice > len(expenses):
+        if not entries or choice < 1 or choice > len(entries):
             await update.message.reply_text(
-                f"Invalid choice. Please enter a number between 1 and {len(expenses)}, or /cancel."
+                f"Invalid choice. Please enter a number between 1 and {len(entries)}, or /cancel."
             )
             return
         
         # Get the row to delete
-        row = expenses[choice - 1]
-        expense_id = row['id']
+        row = entries[choice - 1]
+        entry_id = row['id']
         user_id = update.effective_user.id
         
         # Delete from database (with user_id check for security)
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM expenses WHERE id = ? AND user_id = ?", (expense_id, user_id))
+            cursor.execute(f"DELETE FROM {table} WHERE id = ? AND user_id = ?", (entry_id, user_id))
         
         # Show confirmation
         await update.message.reply_text(
-            f"✅ Deleted expense:\n\n"
+            f"✅ Deleted {entry_type.lower()}:\n\n"
             f"📋 Category: {row['category']}\n"
             f"🏷️ Subcategory: {row['subcategory']}\n"
             f"💵 Amount: €{row['amount']:.2f}\n"
             f"📝 Description: {row['description']}\n\n"
-            "Expense has been removed."
+            f"{entry_type} has been removed."
         )
         
     except ValueError:
@@ -1596,18 +1645,51 @@ async def handle_delete_number(update: Update, context: ContextTypes.DEFAULT_TYP
             "Please enter a valid number, or /cancel to abort."
         )
     except Exception as e:
-        await handle_error(update, e, "deleting expense")
+        await handle_error(update, e, f"deleting entry")
     finally:
         # Always clear the delete context
-        context.user_data.pop("delete_expenses", None)
+        context.user_data.pop("delete_entries", None)
+        context.user_data.pop("target_table", None)
+        context.user_data.pop("entry_type", None)
+        context.user_data.pop("delete_action", None)
 
 
-# Edit expense functions
+async def delete_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show menu to choose delete from expenses or incomes"""
+    # Clear any previous conversation state
+    context.user_data.clear()
+    context.user_data["delete_action"] = "delete"
+    
+    keyboard = [
+        ["💸 Expenses", "💵 Incomes"],
+        ["❌ Cancel"]
+    ]
+    
+    await update.message.reply_text(
+        "🗑️ *Delete Entry*\n\n"
+        "Delete from which type?",
+        parse_mode="Markdown",
+        reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+    )
+
 
 async def edit_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show today's expenses and allow user to edit one"""
-    today = get_today_date()
-    await show_expenses_for_action(update, context, today, "edit", "edit_expenses")
+    """Show menu to choose edit from expenses or incomes"""
+    # Clear any previous conversation state
+    context.user_data.clear()
+    context.user_data["edit_action"] = "edit"
+    
+    keyboard = [
+        ["💸 Expenses", "💵 Incomes"],
+        ["❌ Cancel"]
+    ]
+    
+    await update.message.reply_text(
+        "✏️ *Edit Entry*\n\n"
+        "Edit which type?",
+        parse_mode="Markdown",
+        reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+    )
 
 
 async def edit_expense_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1628,31 +1710,35 @@ async def show_edit_for_date(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
 
 async def handle_edit_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle the selection of an expense to edit"""
+    """Handle the selection of an entry (expense or income) to edit"""
     try:
         choice = int(update.message.text)
-        expenses = context.user_data.get("edit_expenses", [])
+        entries = context.user_data.get("edit_entries", [])
+        table = context.user_data.get("target_table", "expenses")
+        entry_type = context.user_data.get("entry_type", "Expense")
         
-        if not expenses or choice < 1 or choice > len(expenses):
+        if not entries or choice < 1 or choice > len(entries):
             await update.message.reply_text(
-                f"Invalid choice. Please enter a number between 1 and {len(expenses)}, or /cancel."
+                f"Invalid choice. Please enter a number between 1 and {len(entries)}, or /cancel."
             )
             return
         
-        # Store the selected expense for editing
-        row = expenses[choice - 1]
-        context.user_data["edit_expense_id"] = row['id']
-        context.user_data["edit_expense_data"] = {
+        # Store the selected entry for editing
+        row = entries[choice - 1]
+        context.user_data["edit_entry_id"] = row['id']
+        context.user_data["edit_entry_table"] = table
+        context.user_data["edit_entry_type"] = entry_type
+        context.user_data["edit_entry_data"] = {
             "category": row['category'],
             "subcategory": row['subcategory'],
             "amount": row['amount'],
             "description": row['description']
         }
-        context.user_data.pop("edit_expenses", None)
+        context.user_data.pop("edit_entries", None)
         
         # Show what can be edited
         await update.message.reply_text(
-            f"✏️ Editing expense:\n\n"
+            f"✏️ Editing {entry_type.lower()}:\n\n"
             f"📋 Category: {row['category']}\n"
             f"🏷️ Subcategory: {row['subcategory']}\n"
             f"💵 Amount: €{row['amount']:.2f}\n"
@@ -1669,11 +1755,13 @@ async def handle_edit_number(update: Update, context: ContextTypes.DEFAULT_TYPE)
             "Please enter a valid number, or /cancel to abort."
         )
     except Exception as e:
-        await handle_error(update, e, "selecting expense for edit")
+        await handle_error(update, e, "selecting entry for edit")
         # Clean up on error
-        context.user_data.pop("edit_expenses", None)
-        context.user_data.pop("edit_expense_id", None)
-        context.user_data.pop("edit_expense_data", None)
+        context.user_data.pop("edit_entries", None)
+        context.user_data.pop("edit_entry_id", None)
+        context.user_data.pop("edit_entry_table", None)
+        context.user_data.pop("edit_entry_type", None)
+        context.user_data.pop("edit_entry_data", None)
 
 
 async def handle_edit_field_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1683,14 +1771,14 @@ async def handle_edit_field_choice(update: Update, context: ContextTypes.DEFAULT
         
         if choice == "amount":
             context.user_data["editing_field"] = "amount"
-            current_amount = context.user_data["edit_expense_data"]["amount"]
+            current_amount = context.user_data["edit_entry_data"]["amount"]
             await update.message.reply_text(
                 f"Current amount: €{current_amount:.2f}\n\n"
                 "Enter the new amount (numbers only):"
             )
         elif choice == "description":
             context.user_data["editing_field"] = "description"
-            current_desc = context.user_data["edit_expense_data"]["description"]
+            current_desc = context.user_data["edit_entry_data"]["description"]
             await update.message.reply_text(
                 f"Current description: {current_desc}\n\n"
                 "Enter the new description:"
@@ -1702,8 +1790,9 @@ async def handle_edit_field_choice(update: Update, context: ContextTypes.DEFAULT
     except Exception as e:
         await handle_error(update, e, "handling edit field choice")
         # Clean up on error
-        context.user_data.pop("edit_expense_id", None)
-        context.user_data.pop("edit_expense_data", None)
+        context.user_data.pop("edit_entry_id", None)
+        context.user_data.pop("edit_entry_table", None)
+        context.user_data.pop("edit_entry_data", None)
         context.user_data.pop("editing_field", None)
 
 
@@ -1736,28 +1825,31 @@ async def handle_edit_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
         
         # Update database (with user_id check for security)
-        expense_id = context.user_data["edit_expense_id"]
+        entry_id = context.user_data["edit_entry_id"]
+        table = context.user_data["edit_entry_table"]
+        entry_type = context.user_data["edit_entry_type"]
         user_id = update.effective_user.id
+        
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
             if field == "amount":
                 cursor.execute(
-                    "UPDATE expenses SET amount = ? WHERE id = ? AND user_id = ?",
-                    (new_value, expense_id, user_id)
+                    f"UPDATE {table} SET amount = ? WHERE id = ? AND user_id = ?",
+                    (new_value, entry_id, user_id)
                 )
-                context.user_data["edit_expense_data"]["amount"] = new_value
+                context.user_data["edit_entry_data"]["amount"] = new_value
             elif field == "description":
                 cursor.execute(
-                    "UPDATE expenses SET description = ? WHERE id = ? AND user_id = ?",
-                    (new_value, expense_id, user_id)
+                    f"UPDATE {table} SET description = ? WHERE id = ? AND user_id = ?",
+                    (new_value, entry_id, user_id)
                 )
-                context.user_data["edit_expense_data"]["description"] = new_value
+                context.user_data["edit_entry_data"]["description"] = new_value
         
         # Show confirmation
-        data = context.user_data["edit_expense_data"]
+        data = context.user_data["edit_entry_data"]
         await update.message.reply_text(
-            f"✅ Expense updated successfully!\n\n"
+            f"✅ {entry_type} updated successfully!\n\n"
             f"📋 Category: {data['category']}\n"
             f"🏷️ Subcategory: {data['subcategory']}\n"
             f"💵 Amount: €{data['amount']:.2f}\n"
@@ -1769,12 +1861,15 @@ async def handle_edit_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Please enter a valid number for the amount, or /cancel to abort."
         )
     except Exception as e:
-        await handle_error(update, e, "updating expense")
+        await handle_error(update, e, "updating entry")
     finally:
         # Always clear edit context
-        context.user_data.pop("edit_expense_id", None)
-        context.user_data.pop("edit_expense_data", None)
+        context.user_data.pop("edit_entry_id", None)
+        context.user_data.pop("edit_entry_table", None)
+        context.user_data.pop("edit_entry_type", None)
+        context.user_data.pop("edit_entry_data", None)
         context.user_data.pop("editing_field", None)
+        context.user_data.pop("edit_action", None)
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -2012,23 +2107,29 @@ def main():
     async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = update.message.text.strip()
         
-        # Priority 1: Editing field value
+        # Priority 1: Choosing between expenses/incomes for delete or edit
+        if context.user_data.get("delete_action") or context.user_data.get("edit_action"):
+            if "Expenses" in text or "Incomes" in text or "Cancel" in text:
+                await handle_edit_or_delete_type(update, context)
+                return
+        
+        # Priority 2: Editing field value
         if context.user_data.get("editing_field"):
             await handle_edit_value(update, context)
             return
         
-        # Priority 2: Selecting what field to edit
-        if context.user_data.get("edit_expense_data") and text.lower() in ["amount", "description"]:
+        # Priority 3: Selecting what field to edit
+        if context.user_data.get("edit_entry_data") and text.lower() in ["amount", "description"]:
             await handle_edit_field_choice(update, context)
             return
         
-        # Priority 3: Selecting expense number to edit
-        if context.user_data.get("edit_expenses") and text.isdigit():
+        # Priority 4: Selecting entry number to edit
+        if context.user_data.get("edit_entries") and text.isdigit():
             await handle_edit_number(update, context)
             return
         
-        # Priority 4: Selecting expense number to delete
-        if context.user_data.get("delete_expenses") and text.isdigit():
+        # Priority 5: Selecting entry number to delete
+        if context.user_data.get("delete_entries") and text.isdigit():
             await handle_delete_number(update, context)
             return
     
