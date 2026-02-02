@@ -1875,7 +1875,7 @@ async def handle_edit_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel the conversation"""
     await update.message.reply_text(
-        "Operation cancelled. Use /add to add a new expense.",
+        "Operation cancelled.",
         reply_markup=ReplyKeyboardRemove(),
     )
     context.user_data.clear()
@@ -2032,7 +2032,6 @@ def main():
             DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, description)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
-        allow_reentry=True,
     )
     
     # Conversation handler for viewing specific date
@@ -2042,7 +2041,6 @@ def main():
             DATE_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_date_input)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
-        allow_reentry=True,
     )
     
     # Conversation handler for deleting from specific date
@@ -2052,7 +2050,6 @@ def main():
             DATE_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_date_input)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
-        allow_reentry=True,
     )
     
     # Conversation handler for editing from specific date
@@ -2062,7 +2059,6 @@ def main():
             DATE_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_date_input)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
-        allow_reentry=True,
     )
     
     # Conversation handler for PDF export
@@ -2074,7 +2070,6 @@ def main():
             PDF_YEAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_pdf_year)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
-        allow_reentry=True,
     )
     
     # Conversation handler for Summary
@@ -2087,7 +2082,6 @@ def main():
             SUMMARY_DAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_summary_day)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
-        allow_reentry=True,
     )
     
     application.add_handler(conv_handler)
