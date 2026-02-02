@@ -32,10 +32,11 @@
 | 💬 **Conversational UI** | Natural flow for logging expenses and income |
 | 🏷️ **Smart Categories** | 10 categories with 50+ subcategories, auto-descriptions |
 | 👥 **Multi-User** | Isolated data per Telegram user |
+| � **Interactive Summary** | View summaries by day, month, or year with selections |
 | 📄 **PDF Export** | Generate professional reports (week/month/year) |
-| 📊 **Analytics** | Monthly summaries with category breakdowns |
+| 💰 **Income + Expenses** | Track both with separate balance calculations |
 | ✏️ **Full CRUD** | Add, view, edit, delete entries anytime |
-| 📅 **Date Support** | Log expenses for any past date |
+| 📅 **Date Support** | Log entries for any past date |
 | 🐳 **Production Ready** | Docker deployment with auto-restart |
 
 ---
@@ -83,9 +84,9 @@ python run_bot.py
 
 | Command | Description |
 |---------|-------------|
-| `/add` | Log a new expense for today |
+| `/add` | Log a new expense or income for today |
 | `/view` | View today's expenses |
-| `/summary` | Get today's summary with totals |
+| `/summary` | 📊 **Interactive summary** (choose: today/day/month/year) |
 | `/edit` | Edit an expense from today |
 | `/delete` | Delete an expense from today |
 
@@ -102,9 +103,10 @@ python run_bot.py
 
 | Command | Description |
 |---------|-------------|
-| `/month <name>` | View monthly expenses (e.g., `/month january`) |
-| `/income <month>` | View monthly income (e.g., `/income january`) |
-| `/pdf` | 📄 **Export PDF report** (week/month/year) |
+| `/summary` | 📊 Interactive summary with period selection |
+| `/month <name>` | Quick view monthly summary (expenses + incomes + balance) |
+| `/income <month>` | View monthly income only (e.g., `/income january`) |
+| `/pdf` | 📄 **Export PDF report** (week/month/year options) |
 
 ### Utility
 
@@ -137,7 +139,29 @@ python run_bot.py
 
 ---
 
-## 📄 PDF Reports
+## � Interactive Summary
+
+Get financial summaries with flexible period selection:
+
+```
+/summary → Choose period → View results
+```
+
+**Period Options:**
+- 📅 **Today** - Instant summary of today's entries
+- 📆 **Specific Day** - Pick any date (formats: DD/MM, DD/MM/YYYY, YYYY-MM-DD)
+- 📊 **Month** - Select from months with recorded data
+- 📈 **Year** - Select from years with recorded data
+
+**Summary shows:**
+- 💸 Expenses by category with counts
+- 💵 Incomes by category with counts
+- 📈 Balance (income - expenses)
+- Entry counts per category
+
+---
+
+## �📄 PDF Reports
 
 Generate professional financial reports directly in Telegram:
 
@@ -266,7 +290,18 @@ Bot:  ✅ Expense saved successfully!
 
 ---
 
-## 📝 License
+## � Recent Updates
+
+### Version 2.0 - Enhanced Analytics & UX
+- ✨ **New Interactive `/summary`** - Choose period type (today/day/month/year)
+- 💰 **Dual Tracking** - Both expenses and incomes in monthly view with balance
+- 🎯 **Semantic Messages** - Correct terminology (Income ≠ Expense)
+- 🔧 **Improved Stability** - Fixed conversation stuck issues with `allow_reentry`
+- 📋 **Better Help** - Clearer command descriptions and examples
+
+---
+
+## �📝 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
