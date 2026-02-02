@@ -2149,7 +2149,7 @@ def main():
     # Handle unknown commands
     async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
-            "Use /help to see all available commands."
+            "Use /help to see all available commands. Try /cancel to stop the current operation."
         )
     
     # Help command handler
