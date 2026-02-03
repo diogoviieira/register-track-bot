@@ -36,8 +36,9 @@
 | 📄 **PDF Export** | Generate professional reports (week/month/year) |
 | 💰 **Income + Expenses** | Track both with separate balance calculations |
 | ✏️ **Full CRUD** | Add, view, edit, delete entries anytime |
-| 📅 **Date Support** | Log entries for any past date |
-| 🐳 **Production Ready** | Docker deployment with auto-restart |
+| 📅 **Date Support** | Log entries for any past date || 🔍 **Search & Filter** | Find entries by category or view by month/year |
+| 📈 **Analytics** | Top 5 categories, spending averages, all-time stats |
+| ✂️ **Data Validation** | 200-char descriptions, 50-char subscriptions || 🐳 **Production Ready** | Docker deployment with auto-restart |
 
 ---
 
@@ -85,7 +86,7 @@ python run_bot.py
 | Command | Description |
 |---------|-------------|
 | `/add` | Log a new expense or income for today |
-| `/view` | View today's expenses |
+| `/view` | View today's expenses (or `/view january`, `/view 2026`) |
 | `/summary` | 📊 **Interactive summary** (choose: today/day/month/year) |
 | `/edit` | Edit an expense from today |
 | `/delete` | Delete an expense from today |
@@ -99,13 +100,26 @@ python run_bot.py
 | `/edit_d` | Edit expense from a specific date |
 | `/delete_d` | Delete expense from a specific date |
 
-### Reports & Analytics
+### Search & Analytics
+
+| Command | Description |
+|---------|-------------|
+| `/search <category>` | Find all entries by category or subcategory |
+| `/stats` | 📊 View statistics: top categories, averages, all-time totals |
+
+### Quick Views by Period
+
+| Command | Description |
+|---------|-------------|
+| `/expense <month>` | View expenses only for a month (e.g., `/expense january`) |
+| `/income <month>` | View income only for a month (e.g., `/income february`) |
+| `/month <name>` | Combined view: expenses + incomes + balance |
+
+### Reports
 
 | Command | Description |
 |---------|-------------|
 | `/summary` | 📊 Interactive summary with period selection |
-| `/month <name>` | Quick view monthly summary (expenses + incomes + balance) |
-| `/income <month>` | View monthly income only (e.g., `/income january`) |
 | `/pdf` | 📄 **Export PDF report** (week/month/year options) |
 
 ### Utility
@@ -292,11 +306,20 @@ Bot:  ✅ Expense saved successfully!
 
 ## � Recent Updates
 
+### Version 3.0 - Search, Analytics & Data Quality (Feb 2026)
+- 🔍 **New `/search` command** - Find entries by category/subcategory
+- 📈 **New `/stats` command** - Top 5 categories, spending averages, all-time stats
+- 🎯 **Period filtering on `/view`** - `/view january` or `/view 2026`
+- ✂️ **Auto-truncate descriptions** - 200 char limit prevents PDF breakage
+- 🔤 **Subscription validation** - 50 char limit with helpful error messages
+- 👀 **Entry preview** - See entry counts before /edit or /delete (e.g., "💸 Expenses (3)")
+- 📋 **Better month validation** - Clear error messages showing all valid month options
+
 ### Version 2.0 - Enhanced Analytics & UX
-- ✨ **New Interactive `/summary`** - Choose period type (today/day/month/year)
+- ✨ **Interactive `/summary`** - Choose period type (today/day/month/year)
 - 💰 **Dual Tracking** - Both expenses and incomes in monthly view with balance
 - 🎯 **Semantic Messages** - Correct terminology (Income ≠ Expense)
-- 🔧 **Improved Stability** - Fixed conversation stuck issues with `allow_reentry`
+- 🔧 **Improved Stability** - Fixed conversation stuck issues
 - 📋 **Better Help** - Clearer command descriptions and examples
 
 ---
