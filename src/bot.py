@@ -932,33 +932,226 @@ async def view_expenses_month(update: Update, context: ContextTypes.DEFAULT_TYPE
         await handle_error(update, e, "viewing month expenses")
 
 
+async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Search for expenses/incomes by category or subcategory"""
+    try:
+        user_id = update.effective_user.id
+        message_text = update.message.text
+        
+        # Check if search term provided
+        parts = message_text.split(maxsplit=1)
+        
+        if len(parts) < 2:
+            await update.message.reply_text(
+                "🔍 **Search Expenses & Incomes**\n\n"
+                "Usage: `/search <category>`\n\n"
+                "Examples:\n"
+                "/search Home\n"
+                "/search Groceries\n"
+                "/search Rent\n\n"
+                "You can search by category or subcategory.",
+                parse_mode="Markdown"
+            )
+            return
+        
+        search_term = parts[1].strip()
+        
+        # Search in both expenses and incomes
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Search expenses
+            cursor.execute("""
+                SELECT 'expense' as type, * FROM expenses
+                WHERE user_id = ? AND (category LIKE ? OR subcategory LIKE ?)
+                ORDER BY date DESC, time DESC
+            """, (user_id, f"%{search_term}%", f"%{search_term}%"))
+            expenses = cursor.fetchall()
+            
+            # Search incomes
+            cursor.execute("""
+                SELECT 'income' as type, * FROM incomes
+                WHERE user_id = ? AND (category LIKE ? OR subcategory LIKE ?)
+                ORDER BY date DESC, time DESC
+            """, (user_id, f"%{search_term}%", f"%{search_term}%"))
+            incomes = cursor.fetchall()
+        
+        if not expenses and not incomes:
+            await update.message.reply_text(
+                f"🔍 No results found for: **{search_term}**\n\n"
+                "Try searching with a different term.",
+                parse_mode="Markdown"
+            )
+            return
+        
+        # Build results message
+        message = f"🔍 **Search Results for: {search_term}**\n\n"
+        
+        # Expenses section
+        if expenses:
+            expense_total = 0.0
+            message += "💸 **Expenses:**\n"
+            for exp in expenses:
+                amount = exp['amount']
+                expense_total += amount
+                message += f"• {exp['date']} | {exp['category']} > {exp['subcategory']}: €{amount:.2f}\n"
+            message += f"Total: €{expense_total:.2f}\n\n"
+        
+        # Incomes section
+        if incomes:
+            income_total = 0.0
+            message += "💵 **Incomes:**\n"
+            for inc in incomes:
+                amount = inc['amount']
+                income_total += amount
+                message += f"• {inc['date']} | {inc['category']} > {inc['subcategory']}: €{amount:.2f}\n"
+            message += f"Total: €{income_total:.2f}"
+        
+        await update.message.reply_text(message, parse_mode="Markdown")
+        
+    except Exception as e:
+        await handle_error(update, e, "searching entries")
+
+
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show financial statistics and analytics"""
+    try:
+        user_id = update.effective_user.id
+        
+        # Get current month data
+        current_date = datetime.now()
+        start_date = f"{current_date.year}-{current_date.month:02d}-01"
+        if current_date.month == 12:
+            end_date = f"{current_date.year + 1}-01-01"
+        else:
+            end_date = f"{current_date.year}-{current_date.month + 1:02d}-01"
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Get expense categories totals (this month)
+            cursor.execute("""
+                SELECT category, subcategory, SUM(amount) as total, COUNT(*) as count
+                FROM expenses
+                WHERE user_id = ? AND date >= ? AND date < ?
+                GROUP BY category, subcategory
+                ORDER BY total DESC
+            """, (user_id, start_date, end_date))
+            expense_categories = cursor.fetchall()
+            
+            # Get income categories totals (this month)
+            cursor.execute("""
+                SELECT category, subcategory, SUM(amount) as total, COUNT(*) as count
+                FROM incomes
+                WHERE user_id = ? AND date >= ? AND date < ?
+                GROUP BY category, subcategory
+                ORDER BY total DESC
+            """, (user_id, start_date, end_date))
+            income_categories = cursor.fetchall()
+            
+            # Get all-time stats
+            cursor.execute("""
+                SELECT COUNT(*) as total_count, SUM(amount) as total_amount
+                FROM expenses
+                WHERE user_id = ?
+            """, (user_id,))
+            expense_alltime = cursor.fetchone()
+            
+            cursor.execute("""
+                SELECT COUNT(*) as total_count, SUM(amount) as total_amount
+                FROM incomes
+                WHERE user_id = ?
+            """, (user_id,))
+            income_alltime = cursor.fetchone()
+            
+            # Get daily average (this month)
+            cursor.execute("""
+                SELECT COUNT(DISTINCT date) as unique_days
+                FROM expenses
+                WHERE user_id = ? AND date >= ? AND date < ?
+            """, (user_id, start_date, end_date))
+            expense_days = cursor.fetchone()
+        
+        # Build stats message
+        period = f"{MONTH_NAMES.get(f'{current_date.month:02d}', 'Current')} {current_date.year}"
+        message = f"📊 **Financial Statistics**\n\n"
+        
+        # Month summary
+        message += f"**{period}**\n"
+        total_expense_month = sum(cat['total'] for cat in expense_categories) if expense_categories else 0
+        total_income_month = sum(cat['total'] for cat in income_categories) if income_categories else 0
+        balance_month = total_income_month - total_expense_month
+        
+        message += f"💸 Expenses: €{total_expense_month:.2f}\n"
+        message += f"💵 Incomes: €{total_income_month:.2f}\n"
+        message += f"📈 Balance: €{balance_month:.2f}\n\n"
+        
+        # Top 5 expense categories this month
+        if expense_categories:
+            message += f"🏆 **Top 5 Expense Categories** ({period}):\n"
+            for i, cat in enumerate(expense_categories[:5], start=1):
+                percentage = (cat['total'] / total_expense_month * 100) if total_expense_month > 0 else 0
+                message += f"{i}. {cat['category']} > {cat['subcategory']}: €{cat['total']:.2f} ({percentage:.1f}%)\n"
+            message += "\n"
+        
+        # Averages
+        avg_expense_entry = total_expense_month / sum(cat['count'] for cat in expense_categories) if expense_categories else 0
+        avg_income_entry = total_income_month / sum(cat['count'] for cat in income_categories) if income_categories else 0
+        days_with_expenses = expense_days['unique_days'] if expense_days and expense_days['unique_days'] else 0
+        avg_daily_expense = total_expense_month / days_with_expenses if days_with_expenses > 0 else 0
+        
+        message += f"📈 **Averages** ({period}):\n"
+        message += f"• Per expense entry: €{avg_expense_entry:.2f}\n"
+        message += f"• Per income entry: €{avg_income_entry:.2f}\n"
+        message += f"• Daily (expense days): €{avg_daily_expense:.2f}\n\n"
+        
+        # All-time stats
+        total_expense_alltime = expense_alltime['total_amount'] if expense_alltime['total_amount'] else 0
+        total_income_alltime = income_alltime['total_amount'] if income_alltime['total_amount'] else 0
+        count_expense_alltime = expense_alltime['total_count'] if expense_alltime['total_count'] else 0
+        count_income_alltime = income_alltime['total_count'] if income_alltime['total_count'] else 0
+        
+        message += f"🌍 **All-Time**:\n"
+        message += f"💸 Total expenses: €{total_expense_alltime:.2f} ({count_expense_alltime} entries)\n"
+        message += f"💵 Total incomes: €{total_income_alltime:.2f} ({count_income_alltime} entries)\n"
+        message += f"📉 Net balance: €{total_income_alltime - total_expense_alltime:.2f}"
+        
+        await update.message.reply_text(message, parse_mode="Markdown")
+        
+    except Exception as e:
+        await handle_error(update, e, "generating statistics")
+
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show help message with all available commands"""
     await update.message.reply_text(
         "📋 **Available Commands:**\n\n"
-        "** Add Entries **\n"
+        "**Add Entries**\n"
         "/add - Add expense or income for today\n"
         "/add_d - Add expense or income for a specific date\n\n"
-        "** View & Summary **\n"
-        "/view - View today's expenses\n"
+        "**View & Summary**\n"
+        "/view - View today's expenses (or /view january, /view 2026)\n"
         "/summary - Interactive summary (day/month/year)\n\n"
-        "** Edit & Delete (Today) **\n"
+        "**Edit & Delete (Today)**\n"
         "/edit - Edit an expense from today\n"
         "/delete - Delete an expense from today\n\n"
-        "** Specific Date **\n"
+        "**Specific Date**\n"
         "/view_d - View expenses for a specific date\n"
         "/edit_d - Edit expense from a specific date\n"
         "/delete_d - Delete expense from a specific date\n\n"
-        "** Quick Views by Month **\n"
+        "**Quick Views by Month**\n"
         "/expense <month> - View expenses only for a month\n"
         "/income <month> - View incomes only for a month\n"
         "Example: /expense february or /income 2\n\n"
-        "** Combined View **\n"
+        "**Combined View**\n"
         "/month <name> - View summary (expenses + incomes + balance)\n"
         "Example: /month february or /month 2\n\n"
-        "** Export **\n"
+        "**Search & Analytics**\n"
+        "/search <category> - Search by category or subcategory\n"
+        "/stats - View statistics and top categories\n\n"
+        "**Export**\n"
         "/pdf - Export PDF report (week/month/year)\n\n"
-        "** Other **\n"
+        "**Other**\n"
         "/cancel - Cancel current operation\n"
         "/help - Show this help message\n"
     )
@@ -1188,20 +1381,85 @@ async def description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 
 async def view_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """View today's expenses for current user"""
+    """View expenses - can be today or filtered by month/year"""
     try:
-        today = get_today_date()
         user_id = update.effective_user.id
-        expenses = get_entries_for_date(today, user_id, "expenses")
+        message_text = update.message.text.lower()
         
-        if expenses:
-            total = sum(row['amount'] for row in expenses)
-            message = f"📊 Today's Expenses ({today}):\n\n"
-            for exp in expenses:
-                message += format_expense_line(exp) + "\n"
-            message += f"\n💰 Total: €{total:.2f}"
+        # Check if a specific month/year is provided
+        parts = message_text.split()
+        
+        if len(parts) > 1:
+            # Month or year filtering requested
+            filter_input = parts[1]
+            month_num = MONTH_MAPPINGS.get(filter_input)
+            
+            if month_num:
+                # Monthly view
+                current_year = datetime.now().year
+                with get_db_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        SELECT * FROM expenses
+                        WHERE user_id = ? AND date LIKE ?
+                        ORDER BY date DESC, time DESC
+                    """, (user_id, f"{current_year}-{month_num}-%"))
+                    expenses = cursor.fetchall()
+                
+                if expenses:
+                    total = sum(row['amount'] for row in expenses)
+                    message = f"📊 Expenses for {MONTH_NAMES[month_num]} {current_year}:\n\n"
+                    for exp in expenses:
+                        message += format_expense_line(exp) + "\n"
+                    message += f"\n💰 Total: €{total:.2f}\n📝 {len(expenses)} expense(s)"
+                else:
+                    message = f"No expenses recorded for {filter_input.capitalize()} {current_year}."
+            elif filter_input.isdigit() and len(filter_input) == 4:
+                # Yearly view
+                year = filter_input
+                with get_db_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        SELECT * FROM expenses
+                        WHERE user_id = ? AND date LIKE ?
+                        ORDER BY date DESC, time DESC
+                    """, (user_id, f"{year}-%"))
+                    expenses = cursor.fetchall()
+                
+                if expenses:
+                    total = sum(row['amount'] for row in expenses)
+                    message = f"📊 Expenses for {year}:\n\n"
+                    for exp in expenses:
+                        message += format_expense_line(exp) + "\n"
+                    message += f"\n💰 Total: €{total:.2f}\n📝 {len(expenses)} expense(s)"
+                else:
+                    message = f"No expenses recorded for {year}."
+            else:
+                # Invalid filter
+                await update.message.reply_text(
+                    "❌ **Invalid filter.**\n\n"
+                    "Usage: `/view` or `/view january` or `/view 2026`\n\n"
+                    "Examples:\n"
+                    "/view - Today\n"
+                    "/view january - January expenses\n"
+                    "/view 1 - January expenses\n"
+                    "/view 2026 - Year 2026 expenses",
+                    parse_mode="Markdown"
+                )
+                return
         else:
-            message = "No expenses recorded for today."
+            # No filter - show today
+            today = get_today_date()
+            expenses = get_entries_for_date(today, user_id, "expenses")
+            
+            if expenses:
+                total = sum(row['amount'] for row in expenses)
+                message = f"📊 Today's Expenses ({today}):\n\n"
+                for exp in expenses:
+                    message += format_expense_line(exp) + "\n"
+                message += f"\n💰 Total: €{total:.2f}"
+            else:
+                message = "No expenses recorded for today."
         
         await update.message.reply_text(message)
     except Exception as e:
@@ -2244,6 +2502,8 @@ def main():
     application.add_handler(CommandHandler("month", view_month_expenses))
     application.add_handler(CommandHandler("expense", view_expenses_month))
     application.add_handler(CommandHandler("income", view_incomes_month))
+    application.add_handler(CommandHandler("search", search_command))
+    application.add_handler(CommandHandler("stats", stats_command))
     application.add_handler(CommandHandler("edit", edit_expense))
     application.add_handler(CommandHandler("delete", delete_expense))
     
