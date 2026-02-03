@@ -40,7 +40,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("telegram").setLevel(logging.WARNING)
 
 # Conversation states
-ADD_TYPE, CATEGORY, SUBCATEGORY, AMOUNT, DESCRIPTION, EDIT_FIELD, PDF_PERIOD, PDF_MONTH, PDF_YEAR, SUMMARY_PERIOD, SUMMARY_MONTH, SUMMARY_YEAR, SUMMARY_DAY, EXPENSE_PERIOD, EXPENSE_MONTH, EXPENSE_YEAR, EXPENSE_DAY, EDIT_PERIOD, EDIT_MONTH, EDIT_YEAR, EDIT_DAY, DELETE_PERIOD, DELETE_MONTH, DELETE_YEAR, DELETE_DAY, STATS_MONTH = range(26)
+ADD_TYPE, CATEGORY, SUBCATEGORY, AMOUNT, DESCRIPTION, EDIT_FIELD, PDF_PERIOD, PDF_MONTH, PDF_YEAR, SUMMARY_PERIOD, SUMMARY_MONTH, SUMMARY_YEAR, SUMMARY_DAY, EXPENSE_PERIOD, EXPENSE_MONTH, EXPENSE_YEAR, EXPENSE_DAY, EDIT_PERIOD, EDIT_MONTH, EDIT_YEAR, EDIT_DAY, EDIT_NUMBER, DELETE_PERIOD, DELETE_MONTH, DELETE_YEAR, DELETE_DAY, DELETE_NUMBER, STATS_MONTH = range(28)
 
 # Database file path
 DB_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "finance_tracker.db")
@@ -1138,7 +1138,10 @@ async def handle_expense_day(update: Update, context: ContextTypes.DEFAULT_TYPE)
         parsed_date = datetime.strptime(date_text, "%d/%m/%y")
         date_str = parsed_date.strftime("%Y-%m-%d")
     except ValueError:
-        await update.message.reply_text("❌ Invalid date format. Use DD/MM/YY")
+        await update.message.reply_text(
+            "❌ Invalid date format. Use DD/MM/YY\n\n"
+            "Example: 03/02/26 for February 3rd, 2026"
+        )
         return EXPENSE_DAY
     
     return await show_entries_by_period(update, context, "expense", "day", date_str)
@@ -1218,7 +1221,7 @@ async def handle_income_period(update: Update, context: ContextTypes.DEFAULT_TYP
     elif "Specific Day" in choice:
         await update.message.reply_text(
             "📅 **Enter a date**\n\n"
-            "Format: DD/MM/YY",
+            "Format: DD/MM/YY\nExample: 03/02/26",
             parse_mode="Markdown",
             reply_markup=ReplyKeyboardRemove()
         )
@@ -1285,7 +1288,10 @@ async def handle_income_day(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         parsed_date = datetime.strptime(date_text, "%d/%m/%y")
         date_str = parsed_date.strftime("%Y-%m-%d")
     except ValueError:
-        await update.message.reply_text("❌ Invalid date format. Use DD/MM/YY")
+        await update.message.reply_text(
+            "❌ Invalid date format. Use DD/MM/YY\n\n"
+            "Example: 03/02/26 for February 3rd, 2026"
+        )
         return EXPENSE_DAY
     
     return await show_entries_by_period(update, context, "income", "day", date_str)
@@ -2031,19 +2037,22 @@ async def handle_delete_number(update: Update, context: ContextTypes.DEFAULT_TYP
     try:
         choice = int(update.message.text)
         entries = context.user_data.get("delete_entries", [])
-        table = context.user_data.get("target_table", "expenses")
-        entry_type = context.user_data.get("entry_type", "Expense")
         
         if not entries or choice < 1 or choice > len(entries):
             await update.message.reply_text(
                 f"Invalid choice. Please enter a number between 1 and {len(entries)}, or /cancel."
             )
-            return
+            return DELETE_NUMBER
         
         # Get the row to delete
         row = entries[choice - 1]
         entry_id = row['id']
         user_id = update.effective_user.id
+        
+        # Determine table based on whether 'category' is 'Incomes'
+        is_income = row['category'] == 'Incomes'
+        table = "incomes" if is_income else "expenses"
+        entry_type = "Income" if is_income else "Expense"
         
         # Delete from database (with user_id check for security)
         with get_db_connection() as conn:
@@ -2057,17 +2066,25 @@ async def handle_delete_number(update: Update, context: ContextTypes.DEFAULT_TYP
             f"🏷️ Subcategory: {row['subcategory']}\n"
             f"💵 Amount: €{row['amount']:.2f}\n"
             f"📝 Description: {row['description']}\n\n"
-            f"{entry_type} has been removed."
+            f"{entry_type} has been removed.",
+            reply_markup=ReplyKeyboardRemove()
         )
+        
+        return ConversationHandler.END
         
     except ValueError:
         await update.message.reply_text(
             "Please enter a valid number, or /cancel to abort."
         )
+        return DELETE_NUMBER
     except Exception as e:
         await handle_error(update, e, f"deleting entry")
+        return ConversationHandler.END
     finally:
         # Always clear the delete context
+        context.user_data.pop("delete_entries", None)
+        context.user_data.pop("period_type", None)
+        context.user_data.pop("period_value", None)
         context.user_data.pop("delete_entries", None)
         context.user_data.pop("target_table", None)
         context.user_data.pop("entry_type", None)
@@ -2108,7 +2125,7 @@ async def handle_delete_period(update: Update, context: ContextTypes.DEFAULT_TYP
     elif "Specific Day" in choice:
         await update.message.reply_text(
             "📅 **Enter a date**\n\n"
-            "Format: DD/MM/YY",
+            "Format: DD/MM/YY\nExample: 03/02/26",
             parse_mode="Markdown",
             reply_markup=ReplyKeyboardRemove()
         )
@@ -2169,7 +2186,11 @@ async def handle_delete_day(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         parsed_date = datetime.strptime(date_text, "%d/%m/%y")
         date_str = parsed_date.strftime("%Y-%m-%d")
     except ValueError:
-        await update.message.reply_text("❌ Invalid date format. Use DD/MM/YY")
+        await update.message.reply_text(
+            "❌ Invalid date format. Use DD/MM/YY\n\n"
+            "Example: 03/02/26 for February 3rd, 2026",
+            reply_markup=ReplyKeyboardRemove()
+        )
         return DELETE_DAY
     
     return await show_delete_entries(update, context, "day", date_str)
@@ -2272,9 +2293,9 @@ async def show_delete_entries(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     message += f"\nSelect number to delete (1-{len(context.user_data['delete_entries'])}) or /cancel"
     
-    await update.message.reply_text(message, reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text(message, parse_mode="Markdown", reply_markup=ReplyKeyboardRemove())
     
-    return DELETE_DAY  # Will handle text input via handle_text_input
+    return DELETE_NUMBER
 
 
 async def edit_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -2311,7 +2332,7 @@ async def handle_edit_period(update: Update, context: ContextTypes.DEFAULT_TYPE)
     elif "Specific Day" in choice:
         await update.message.reply_text(
             "📅 **Enter a date**\n\n"
-            "Format: DD/MM/YY",
+            "Format: DD/MM/YY\nExample: 03/02/26",
             parse_mode="Markdown",
             reply_markup=ReplyKeyboardRemove()
         )
@@ -2372,7 +2393,11 @@ async def handle_edit_day(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         parsed_date = datetime.strptime(date_text, "%d/%m/%y")
         date_str = parsed_date.strftime("%Y-%m-%d")
     except ValueError:
-        await update.message.reply_text("❌ Invalid date format. Use DD/MM/YY")
+        await update.message.reply_text(
+            "❌ Invalid date format. Use DD/MM/YY\n\n"
+            "Example: 03/02/26 for February 3rd, 2026",
+            reply_markup=ReplyKeyboardRemove()
+        )
         return EDIT_DAY
     
     return await show_edit_entries(update, context, "day", date_str)
@@ -2475,9 +2500,9 @@ async def show_edit_entries(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     
     message += f"\nSelect number to edit (1-{len(context.user_data['edit_entries'])}) or /cancel"
     
-    await update.message.reply_text(message, reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text(message, parse_mode="Markdown", reply_markup=ReplyKeyboardRemove())
     
-    return EDIT_DAY  # Will handle text input via handle_text_input
+    return EDIT_NUMBER
 
 
 async def handle_edit_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2521,10 +2546,13 @@ async def handle_edit_number(update: Update, context: ContextTypes.DEFAULT_TYPE)
             "• /cancel - Cancel editing"
         )
         
+        return EDIT_FIELD
+        
     except ValueError:
         await update.message.reply_text(
             "Please enter a valid number, or /cancel to abort."
         )
+        return EDIT_NUMBER
     except Exception as e:
         await handle_error(update, e, "selecting entry for edit")
         # Clean up on error
@@ -2770,6 +2798,8 @@ def main():
             EDIT_MONTH: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_month)],
             EDIT_YEAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_year)],
             EDIT_DAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_day)],
+            EDIT_NUMBER: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_number)],
+            EDIT_FIELD: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_field_choice)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
         per_message=False,
@@ -2783,6 +2813,7 @@ def main():
             DELETE_MONTH: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_delete_month)],
             DELETE_YEAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_delete_year)],
             DELETE_DAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_delete_day)],
+            DELETE_NUMBER: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_delete_number)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
         per_message=False,
