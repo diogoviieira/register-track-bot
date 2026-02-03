@@ -101,7 +101,7 @@ EXPENSE_CATEGORIES = [
     ["Home", "Car"],
     ["Lazer", "Travel"],
     ["Needs", "Health"],
-    ["Streaming", "Subscriptions"],
+    ["Subscriptions"],
     ["Others"]
 ]
 
@@ -110,7 +110,7 @@ CATEGORIES = [
     ["Home", "Car"],
     ["Lazer", "Travel"],
     ["Needs", "Health"],
-    ["Streaming", "Subscriptions"],
+    ["Subscriptions"],
     ["Others", "Incomes"]
 ]
 
@@ -119,7 +119,7 @@ SUBCATEGORIES = {
     "Home": [
         ["Rent", "Light"],
         ["Water", "Net"],
-        ["Groceries", "Me Mimei"],
+        ["Me Mimei"],
         ["Other"]
     ],
     "Car": [
@@ -137,17 +137,9 @@ SUBCATEGORIES = {
         ["Transportation", "Food"],
         ["Activities", "Other"]
     ],
-    "Streaming": [
-        ["Prime", "Netflix"],
-        ["Disney+", "Crunchyroll"]
-    ],
-    "Subscriptions": [
-        ["Patreon", "iCloud"],
-        ["Spotify", "F1 TV"],
-        ["Telemóvel", "Other"]
-    ],
     "Needs": [
-        ["Clothing", "Personal Care"],
+        ["Groceries", "Clothing"],
+        ["Personal Care"],
         ["Other"]
     ],
     "Health": [
@@ -167,15 +159,17 @@ SUBCATEGORIES = {
     ]
 }
 
-# Categories/subcategories that don't need description input
-# Description will be auto-filled as "Category - Subcategory"
 AUTO_DESCRIPTION = {
-    "Home": ["Rent", "Light", "Water", "Net", "Groceries"],
+    "Home": ["Rent", "Light", "Water", "Net"],
     "Car": ["Fuel", "Insurance", "Via Verde"],
     "Health": ["Doctor", "Pharmacy", "Gym", "Other"],
-    "Streaming": "all",  # All subcategories in Streaming
-    "Subscriptions": "all",  # All subcategories in Subscriptions
+    "Needs": ["Groceries"],
     "Incomes": ["Refeição", "Subsídio", "Bónus", "Salary"]
+}
+
+# Categories that require free-text subcategory input
+TEXT_SUBCATEGORY_CATEGORIES = {
+    "Subscriptions"
 }
 
 
@@ -1019,6 +1013,14 @@ async def category(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Store category and ask for subcategory"""
     selected_category = update.message.text
     context.user_data["category"] = selected_category
+
+    if selected_category in TEXT_SUBCATEGORY_CATEGORIES:
+        await update.message.reply_text(
+            f"Category: {selected_category}\n\n"
+            "Please write the name of the subscription:",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return SUBCATEGORY
     
     # Get subcategories for the selected category
     if selected_category in SUBCATEGORIES:
