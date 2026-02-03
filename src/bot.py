@@ -83,6 +83,8 @@ MONTH_NAMES = {
 
 # Validation constants
 MAX_AMOUNT = 999999
+MAX_DESCRIPTION = 200
+MAX_SUBSCRIPTION = 50
 
 # Common prompts
 DATE_FORMAT_PROMPT = (
@@ -784,11 +786,14 @@ async def view_incomes_month(update: Update, context: ContextTypes.DEFAULT_TYPE)
         parts = message_text.split()
         if len(parts) < 2:
             await update.message.reply_text(
-                "📅 Please specify a month.\n\n"
+                "📅 **Available months with data:**\n\n"
+                "Use: `/income january` or `/income 1`\n\n"
                 "Examples:\n"
-                "/income november\n"
-                "/income 11\n"
-                "/income novembro"
+                "/income january\n"
+                "/income 1\n"
+                "/income janeiro\n\n"
+                "Months: January, February, March, April, May, June, July, August, September, October, November, December",
+                parse_mode="Markdown"
             )
             return
         
@@ -797,8 +802,12 @@ async def view_incomes_month(update: Update, context: ContextTypes.DEFAULT_TYPE)
         
         if not month_num:
             await update.message.reply_text(
-                "❌ Invalid month. Please use month name or number (1-12).\n\n"
-                "Examples: /income november or /income 11"
+                "❌ **Invalid month.**\n\n"
+                "Use: `/income january` or `/income 1`\n\n"
+                "Valid months (English): january, february, march, april, may, june, july, august, september, october, november, december\n\n"
+                "Valid months (Portuguese): janeiro, fevereiro, março, abril, maio, junho, julho, agosto, setembro, outubro, novembro, dezembro\n\n"
+                "Or use numbers 1-12.",
+                parse_mode="Markdown"
             )
             return
         
@@ -855,11 +864,14 @@ async def view_expenses_month(update: Update, context: ContextTypes.DEFAULT_TYPE
         parts = message_text.split()
         if len(parts) < 2:
             await update.message.reply_text(
-                "📅 Please specify a month.\n\n"
+                "📅 **Available months with data:**\n\n"
+                "Use: `/expense january` or `/expense 1`\n\n"
                 "Examples:\n"
-                "/expense november\n"
-                "/expense 11\n"
-                "/expense novembro"
+                "/expense january\n"
+                "/expense 1\n"
+                "/expense janeiro\n\n"
+                "Months: January, February, March, April, May, June, July, August, September, October, November, December",
+                parse_mode="Markdown"
             )
             return
         
@@ -868,8 +880,12 @@ async def view_expenses_month(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         if not month_num:
             await update.message.reply_text(
-                "❌ Invalid month. Please use month name or number (1-12).\n\n"
-                "Examples: /expense november or /expense 11"
+                "❌ **Invalid month.**\n\n"
+                "Use: `/expense january` or `/expense 1`\n\n"
+                "Valid months (English): january, february, march, april, may, june, july, august, september, october, november, december\n\n"
+                "Valid months (Portuguese): janeiro, fevereiro, março, abril, maio, junho, julho, agosto, setembro, outubro, novembro, dezembro\n\n"
+                "Or use numbers 1-12.",
+                parse_mode="Markdown"
             )
             return
         
@@ -1043,11 +1059,27 @@ async def category(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def subcategory(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Store subcategory and ask for amount"""
-    selected_subcategory = update.message.text
+    selected_subcategory = update.message.text.strip()
+    category = context.user_data["category"]
+    
+    # Validate subscription length
+    if category in TEXT_SUBCATEGORY_CATEGORIES:
+        if len(selected_subcategory) > MAX_SUBSCRIPTION:
+            await update.message.reply_text(
+                f"❌ Subscription name too long! Maximum {MAX_SUBSCRIPTION} characters.\n\n"
+                f"Please write a shorter name:"
+            )
+            return SUBCATEGORY
+        if len(selected_subcategory) < 2:
+            await update.message.reply_text(
+                "❌ Subscription name too short! Minimum 2 characters.\n\n"
+                "Please write a valid name:"
+            )
+            return SUBCATEGORY
+    
     context.user_data["subcategory"] = selected_subcategory
     
     # Check if this category/subcategory should skip description
-    category = context.user_data["category"]
     if should_skip_description(category, selected_subcategory):
         context.user_data["skip_description"] = True
     
@@ -1122,12 +1154,22 @@ async def amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Store description and save the expense"""
-    context.user_data["description"] = update.message.text
+    description_text = update.message.text
+    
+    # Validate and truncate description
+    if len(description_text) > MAX_DESCRIPTION:
+        description_text = description_text[:MAX_DESCRIPTION]
+        await update.message.reply_text(
+            f"✂️ Description truncated to {MAX_DESCRIPTION} characters.\n"
+            f"New description: {description_text}"
+        )
+    
+    context.user_data["description"] = description_text
     
     category = context.user_data["category"]
     subcategory = context.user_data.get("subcategory", "N/A")
     amount = context.user_data["amount"]
-    description = update.message.text
+    description = description_text
     target_date = context.user_data.get("target_date")
     user_id = update.effective_user.id
     is_income = (category == "Incomes")
@@ -1477,11 +1519,14 @@ async def view_month_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE
         parts = message_text.split()
         if len(parts) < 2:
             await update.message.reply_text(
-                "📅 Please specify a month.\n\n"
+                "📅 **Available months with data:**\n\n"
+                "Use: `/month january` or `/month 1`\n\n"
                 "Examples:\n"
-                "/month november\n"
-                "/month 11\n"
-                "/month novembro"
+                "/month january\n"
+                "/month 1\n"
+                "/month janeiro\n\n"
+                "Months: January, February, March, April, May, June, July, August, September, October, November, December",
+                parse_mode="Markdown"
             )
             return
         
@@ -1490,8 +1535,12 @@ async def view_month_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         if not month_num:
             await update.message.reply_text(
-                "❌ Invalid month. Please use month name or number (1-12).\n\n"
-                "Examples: /month november or /month 11"
+                "❌ **Invalid month.**\n\n"
+                "Use: `/month january` or `/month 1`\n\n"
+                "Valid months (English): january, february, march, april, may, june, july, august, september, october, november, december\n\n"
+                "Valid months (Portuguese): janeiro, fevereiro, março, abril, maio, junho, julho, agosto, setembro, outubro, novembro, dezembro\n\n"
+                "Or use numbers 1-12.",
+                parse_mode="Markdown"
             )
             return
         
@@ -1712,13 +1761,31 @@ async def delete_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     context.user_data["delete_action"] = "delete"
     
-    keyboard = [
-        ["💸 Expenses", "💵 Incomes"],
-        ["❌ Cancel"]
-    ]
+    today = get_today_date()
+    user_id = update.effective_user.id
+    
+    # Get counts of entries
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM expenses WHERE user_id = ? AND date = ?", (user_id, today))
+        expense_count = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM incomes WHERE user_id = ? AND date = ?", (user_id, today))
+        income_count = cursor.fetchone()[0]
+    
+    if expense_count == 0 and income_count == 0:
+        await update.message.reply_text("📭 No entries found for today.")
+        return
+    
+    keyboard = []
+    if expense_count > 0:
+        keyboard.append([f"💸 Expenses ({expense_count})"])
+    if income_count > 0:
+        keyboard.append([f"💵 Incomes ({income_count})"])
+    keyboard.append(["❌ Cancel"])
     
     await update.message.reply_text(
         "🗑️ *Delete Entry*\n\n"
+        f"Today ({today})\n\n"
         "Delete from which type?",
         parse_mode="Markdown",
         reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
@@ -1731,13 +1798,31 @@ async def edit_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     context.user_data["edit_action"] = "edit"
     
-    keyboard = [
-        ["💸 Expenses", "💵 Incomes"],
-        ["❌ Cancel"]
-    ]
+    today = get_today_date()
+    user_id = update.effective_user.id
+    
+    # Get counts of entries
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM expenses WHERE user_id = ? AND date = ?", (user_id, today))
+        expense_count = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM incomes WHERE user_id = ? AND date = ?", (user_id, today))
+        income_count = cursor.fetchone()[0]
+    
+    if expense_count == 0 and income_count == 0:
+        await update.message.reply_text("📭 No entries found for today.")
+        return
+    
+    keyboard = []
+    if expense_count > 0:
+        keyboard.append([f"💸 Expenses ({expense_count})"])
+    if income_count > 0:
+        keyboard.append([f"💵 Incomes ({income_count})"])
+    keyboard.append(["❌ Cancel"])
     
     await update.message.reply_text(
         "✏️ *Edit Entry*\n\n"
+        f"Today ({today})\n\n"
         "Edit which type?",
         parse_mode="Markdown",
         reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
