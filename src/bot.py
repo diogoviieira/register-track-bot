@@ -40,7 +40,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("telegram").setLevel(logging.WARNING)
 
 # Conversation states
-CATEGORY, SUBCATEGORY, AMOUNT, DESCRIPTION, DATE_INPUT, EDIT_FIELD, PDF_PERIOD, PDF_MONTH, PDF_YEAR, SUMMARY_PERIOD, SUMMARY_MONTH, SUMMARY_YEAR, SUMMARY_DAY = range(13)
+ADD_TYPE, CATEGORY, SUBCATEGORY, AMOUNT, DESCRIPTION, DATE_INPUT, EDIT_FIELD, PDF_PERIOD, PDF_MONTH, PDF_YEAR, SUMMARY_PERIOD, SUMMARY_MONTH, SUMMARY_YEAR, SUMMARY_DAY = range(14)
 
 # Database file path
 DB_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "finance_tracker.db")
@@ -91,7 +91,21 @@ DATE_FORMAT_PROMPT = (
     "Or type /cancel to abort."
 )
 
-# Main categories
+# Entry type selection
+ENTRY_TYPE_OPTIONS = [
+    ["Expenses", "Income"]
+]
+
+# Main categories (expenses)
+EXPENSE_CATEGORIES = [
+    ["Home", "Car"],
+    ["Lazer", "Travel"],
+    ["Needs", "Health"],
+    ["Streaming", "Subscriptions"],
+    ["Others"]
+]
+
+# Legacy combined categories (kept for compatibility)
 CATEGORIES = [
     ["Home", "Car"],
     ["Lazer", "Travel"],
@@ -942,14 +956,19 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start the conversation and ask for expense category"""
+    # Clear any previous conversation state and notify if there was an active command
+    if context.user_data:
+        await update.message.reply_text("⚠️ Previous command cancelled automatically.")
+    context.user_data.clear()
+
     await update.message.reply_text(
         "👋 Welcome to your Expense & Income Tracker! 📊\n\n"
         "I'll help you track your finances easily.\n\n"
         "Use /help to see all available commands.\n\n"
-        "Let's add an entry! Please select a category:",
-        reply_markup=ReplyKeyboardMarkup(CATEGORIES, one_time_keyboard=True),
+        "Let's add an entry! Please select a type:",
+        reply_markup=ReplyKeyboardMarkup(ENTRY_TYPE_OPTIONS, one_time_keyboard=True),
     )
-    return CATEGORY
+    return ADD_TYPE
 
 
 async def add_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -961,10 +980,39 @@ async def add_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     
     await update.message.reply_text(
         "Let's add a new entry! 💰\n\n"
-        "Please select a category:",
-        reply_markup=ReplyKeyboardMarkup(CATEGORIES, one_time_keyboard=True),
+        "Please select a type:",
+        reply_markup=ReplyKeyboardMarkup(ENTRY_TYPE_OPTIONS, one_time_keyboard=True),
     )
-    return CATEGORY
+    return ADD_TYPE
+
+
+async def handle_add_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle entry type selection (Expenses or Income)"""
+    selection = update.message.text.strip()
+    selection_lower = selection.lower()
+
+    if selection_lower in ["expense", "expenses"]:
+        context.user_data["entry_type"] = "expense"
+        await update.message.reply_text(
+            "Please select an expense category:",
+            reply_markup=ReplyKeyboardMarkup(EXPENSE_CATEGORIES, one_time_keyboard=True),
+        )
+        return CATEGORY
+
+    if selection_lower in ["income", "incomes"]:
+        context.user_data["entry_type"] = "income"
+        context.user_data["category"] = "Incomes"
+        await update.message.reply_text(
+            "Please select an income category:",
+            reply_markup=ReplyKeyboardMarkup(SUBCATEGORIES["Incomes"], one_time_keyboard=True),
+        )
+        return SUBCATEGORY
+
+    await update.message.reply_text(
+        "Please choose Income or Expenses:",
+        reply_markup=ReplyKeyboardMarkup(ENTRY_TYPE_OPTIONS, one_time_keyboard=True),
+    )
+    return ADD_TYPE
 
 
 async def category(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1951,11 +1999,11 @@ async def handle_date_input(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if context.user_data.get("adding_for_date"):
         context.user_data.pop("adding_for_date")
         await update.message.reply_text(
-            f"📅 Adding expense for {date_str}\n\n"
-            "Please select a category:",
-            reply_markup=ReplyKeyboardMarkup(CATEGORIES, one_time_keyboard=True),
+            f"📅 Adding entry for {date_str}\n\n"
+            "Please select a type:",
+            reply_markup=ReplyKeyboardMarkup(ENTRY_TYPE_OPTIONS, one_time_keyboard=True),
         )
-        return CATEGORY
+        return ADD_TYPE
     
     elif context.user_data.get("viewing_date"):
         context.user_data.pop("viewing_date")
@@ -2034,6 +2082,7 @@ def main():
         ],
         states={
             DATE_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_date_input)],
+            ADD_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_add_type)],
             CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, category)],
             SUBCATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, subcategory)],
             AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, amount)],
