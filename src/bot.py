@@ -185,6 +185,11 @@ def get_today_date() -> str:
     return datetime.now().strftime("%Y-%m-%d")
 
 
+def add_emoji_to_keyboard(keyboard: list, emoji: str) -> list:
+    """Add emoji prefix to all buttons in keyboard"""
+    return [[f"{emoji} {btn}" for btn in row] for row in keyboard]
+
+
 @contextmanager
 def get_db_connection():
     """Get thread-safe database connection with automatic commit/rollback"""
@@ -1430,18 +1435,24 @@ async def handle_add_type(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     if selection_lower in ["expense", "expenses"]:
         context.user_data["entry_type"] = "expense"
+        expense_keyboard = add_emoji_to_keyboard(EXPENSE_CATEGORIES, "💸")
         await update.message.reply_text(
+            "💸 **Add Expense**\n\n"
             "Please select an expense category:",
-            reply_markup=ReplyKeyboardMarkup(EXPENSE_CATEGORIES, one_time_keyboard=True),
+            parse_mode="Markdown",
+            reply_markup=ReplyKeyboardMarkup(expense_keyboard, one_time_keyboard=True),
         )
         return CATEGORY
 
     if selection_lower in ["income", "incomes"]:
         context.user_data["entry_type"] = "income"
         context.user_data["category"] = "Incomes"
+        income_keyboard = add_emoji_to_keyboard(SUBCATEGORIES["Incomes"], "💵")
         await update.message.reply_text(
+            "💵 **Add Income**\n\n"
             "Please select an income category:",
-            reply_markup=ReplyKeyboardMarkup(SUBCATEGORIES["Incomes"], one_time_keyboard=True),
+            parse_mode="Markdown",
+            reply_markup=ReplyKeyboardMarkup(income_keyboard, one_time_keyboard=True),
         )
         return SUBCATEGORY
 
@@ -1454,7 +1465,7 @@ async def handle_add_type(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def category(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Store category and ask for subcategory"""
-    selected_category = update.message.text
+    selected_category = update.message.text.replace("💸 ", "").strip()
     context.user_data["category"] = selected_category
 
     if selected_category in TEXT_SUBCATEGORY_CATEGORIES:
@@ -1468,10 +1479,12 @@ async def category(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # Get subcategories for the selected category
     if selected_category in SUBCATEGORIES:
         subcats = SUBCATEGORIES[selected_category]
+        emoji = "💸"
+        subcat_keyboard = add_emoji_to_keyboard(subcats, emoji)
         await update.message.reply_text(
             f"Category: {selected_category}\n\n"
             "Please select a subcategory:",
-            reply_markup=ReplyKeyboardMarkup(subcats, one_time_keyboard=True),
+            reply_markup=ReplyKeyboardMarkup(subcat_keyboard, one_time_keyboard=True),
         )
         return SUBCATEGORY
     else:
@@ -1486,7 +1499,7 @@ async def category(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def subcategory(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Store subcategory and ask for amount"""
-    selected_subcategory = update.message.text.strip()
+    selected_subcategory = update.message.text.replace("💸 ", "").replace("💵 ", "").strip()
     category = context.user_data["category"]
     
     # Validate subscription length
