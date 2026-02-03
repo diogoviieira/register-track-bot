@@ -907,8 +907,19 @@ async def handle_stats_month(update: Update, context: ContextTypes.DEFAULT_TYPE)
     year_month = month_mapping.get(choice)
     
     if not year_month:
-        await update.message.reply_text("❌ Invalid month. Please try again with /stats")
-        return ConversationHandler.END
+        # Try to find a partial match in case there are extra spaces
+        for key, value in month_mapping.items():
+            if key.lower() == choice.lower():
+                year_month = value
+                break
+        
+        if not year_month:
+            logger.warning(f"Stats month not found. Choice: '{choice}'. Available: {list(month_mapping.keys())}")
+            await update.message.reply_text(
+                "❌ Invalid month. Please select a month from the keyboard.",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            return ConversationHandler.END
     
     context.user_data.pop('stats_month_mapping', None)
     return await generate_and_send_stats(update, user_id, year_month)
@@ -2713,7 +2724,18 @@ def main():
     application.add_handler(pdf_handler)
     application.add_handler(summary_handler)
     application.add_handler(CommandHandler("search", search_command))
-    application.add_handler(CommandHandler("stats", stats_command))
+    
+    # Conversation handler for stats with month selection
+    stats_handler = ConversationHandler(
+        entry_points=[CommandHandler("stats", stats_command)],
+        states={
+            STATS_MONTH: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_stats_month)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+        per_message=False,
+    )
+    
+    application.add_handler(stats_handler)
     
     # Conversation handlers for expense/income viewing with period selection
     expense_handler = ConversationHandler(
