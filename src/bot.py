@@ -40,7 +40,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("telegram").setLevel(logging.WARNING)
 
 # Conversation states
-ADD_TYPE, CATEGORY, SUBCATEGORY, AMOUNT, DESCRIPTION, EDIT_FIELD, PDF_PERIOD, PDF_MONTH, PDF_YEAR, SUMMARY_PERIOD, SUMMARY_MONTH, SUMMARY_YEAR, SUMMARY_DAY, EXPENSE_PERIOD, EXPENSE_MONTH, EXPENSE_YEAR, EXPENSE_DAY, EDIT_PERIOD, EDIT_MONTH, EDIT_YEAR, EDIT_DAY, EDIT_NUMBER, DELETE_PERIOD, DELETE_MONTH, DELETE_YEAR, DELETE_DAY, DELETE_NUMBER, STATS_MONTH, EDIT_VALUE = range(29)
+ADD_TYPE, CATEGORY, SUBCATEGORY, AMOUNT, DESCRIPTION, EDIT_FIELD, PDF_PERIOD, PDF_MONTH, PDF_YEAR, SUMMARY_PERIOD, SUMMARY_MONTH, SUMMARY_YEAR, SUMMARY_DAY, EXPENSE_PERIOD, EXPENSE_MONTH, EXPENSE_YEAR, EXPENSE_DAY, EDIT_PERIOD, EDIT_MONTH, EDIT_YEAR, EDIT_DAY, DELETE_PERIOD, DELETE_MONTH, DELETE_YEAR, DELETE_DAY, STATS_MONTH = range(26)
 
 # Database file path
 DB_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "finance_tracker.db")
@@ -2823,9 +2823,6 @@ def main():
             EDIT_MONTH: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_month)],
             EDIT_YEAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_year)],
             EDIT_DAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_day)],
-            EDIT_NUMBER: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_number)],
-            EDIT_FIELD: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_field_choice)],
-            EDIT_VALUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_value)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
         per_message=False,
