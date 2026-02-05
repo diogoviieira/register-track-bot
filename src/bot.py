@@ -220,7 +220,7 @@ def format_success_message(category: str, subcategory: str, amount: float, descr
         f"🏷️ Subcategory: {subcategory}\n"
         f"{emoji} Amount: €{amount:.2f}\n"
         f"📝 Description: {description}\n\n"
-        f"Use {next_cmd} to add another entry or /view to see today's entries.\n"
+        f"Use {next_cmd} to add another entrys.\n"
         "Use /help to see all available commands."
     )
 
@@ -511,7 +511,8 @@ async def pdf_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(
         "📄 *PDF Export*\n\n"
-        "Choose the period for your financial report:",
+        "Choose the period for your financial report:\n\n"
+        "💡 Use /cancel to stop.",
         parse_mode="Markdown",
         reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
     )
@@ -885,7 +886,8 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     
     await update.message.reply_text(
         "📊 **Select Month for Statistics**\n\n"
-        "Choose a month with recorded data:",
+        "Choose a month with recorded data:\n\n"
+        "💡 Use /cancel to stop.",
         parse_mode="Markdown",
         reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
     )
@@ -1040,7 +1042,8 @@ async def expense_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     
     await update.message.reply_text(
         "💸 **View Expenses**\n\n"
-        "Choose the period:",
+        "Choose the period:\n\n"
+        "💡 Use /cancel to stop.",
         parse_mode="Markdown",
         reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
     )
@@ -1197,7 +1200,8 @@ async def income_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     await update.message.reply_text(
         "💵 **View Incomes**\n\n"
-        "Choose the period:",
+        "Choose the period:\n\n"
+        "💡 Use /cancel to stop.",
         parse_mode="Markdown",
         reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
     )
@@ -1389,27 +1393,94 @@ async def show_entries_by_period(update: Update, context: ContextTypes.DEFAULT_T
     return ConversationHandler.END
 
 
+async def categories_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show all available categories and subcategories"""
+    message = "📂 **All Categories & Subcategories**\n\n"
+    
+    # Expense categories
+    message += "💸 **EXPENSES:**\n\n"
+    
+    for category in ["Home", "Car", "Lazer", "Travel", "Needs", "Health", "Subscriptions", "Others"]:
+        if category in SUBCATEGORIES:
+            # Category emoji mapping
+            category_emojis = {
+                "Home": "🏠",
+                "Car": "🚗",
+                "Lazer": "🎮",
+                "Travel": "✈️",
+                "Needs": "🛒",
+                "Health": "🏥",
+                "Subscriptions": "📺",
+                "Others": "📦"
+            }
+            
+            emoji = category_emojis.get(category, "📌")
+            message += f"{emoji} **{category}**\n"
+            
+            # Get subcategories
+            if category == "Subscriptions":
+                message += "   → (Free text input)\n\n"
+            else:
+                subcats = SUBCATEGORIES[category]
+                # Flatten the keyboard structure
+                all_subs = []
+                for row in subcats:
+                    all_subs.extend(row)
+                
+                for sub in all_subs:
+                    message += f"   • {sub}\n"
+                message += "\n"
+    
+    # Income categories
+    message += "💵 **INCOMES:**\n\n"
+    message += "💰 **Incomes**\n"
+    
+    if "Incomes" in SUBCATEGORIES:
+        subcats = SUBCATEGORIES["Incomes"]
+        all_subs = []
+        for row in subcats:
+            all_subs.extend(row)
+        
+        for sub in all_subs:
+            message += f"   • {sub}\n"
+    
+    message += "\n💡 Use /add to create a new entry!"
+    
+    await update.message.reply_text(message, parse_mode="Markdown")
+
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show help message with all available commands"""
     await update.message.reply_text(
-        "📋 **Available Commands:**\n\n"
-        "**Add Entries**\n"
-        "/add - Add expense or income for today\n\n"
-        "**View & Summary**\n"
-        "/expense - View expenses (today, specific day, month, year)\n"
-        "/income - View incomes (today, specific day, month, year)\n"
-        "/summary - Interactive summary (day/month/year)\n\n"
-        "**Edit & Delete**\n"
-        "/edit - Edit entry (with period selection)\n"
-        "/delete - Delete entry (with period selection)\n\n"
-        "**Search & Analytics**\n"
-        "/search <category> - Search by category or subcategory\n"
-        "/stats - View statistics with month selection\n\n"
-        "**Export**\n"
-        "/pdf - Export PDF report (week/month/year)\n\n"
-        "**Other**\n"
-        "/cancel - Cancel current operation\n"
-        "/help - Show this help message\n"
+        "🤖 **Finance Tracker Bot - Help**\n\n"
+        "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        
+        "✨ **GETTING STARTED**\n"
+        "• /add → Add new expense or income\n"
+        "• /categories → See all categories\n\n"
+        
+        "📊 **VIEW YOUR DATA**\n"
+        "• /expense → View expenses by period\n"
+        "• /income → View incomes by period\n"
+        "• /summary → Financial summary\n"
+        "• /stats → Detailed statistics\n\n"
+        
+        "✏️ **MANAGE ENTRIES**\n"
+        "• /edit → Modify an entry\n"
+        "• /delete → Remove an entry\n"
+        "• /search → Find by category\n"
+        "  _Example: /search groceries_\n\n"
+        
+        "📄 **EXPORT**\n"
+        "• /pdf → Generate PDF report\n\n"
+        
+        "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "💡 **Tips:**\n"
+        "• Use /cancel anytime to stop\n"
+        "• Commands guide you step-by-step\n"
+        "• All data is saved automatically\n\n"
+        
+        "❓ Need help? Just ask!"
     )
 
 
@@ -1424,7 +1495,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "👋 Welcome to your Expense & Income Tracker! 📊\n\n"
         "I'll help you track your finances easily.\n\n"
         "Use /help to see all available commands.\n\n"
-        "Let's add an entry! Please select a type:",
+        "Let's add an entry! Please select a type:\n\n"
+        "💡 Use /cancel to stop.",
         reply_markup=ReplyKeyboardMarkup(ENTRY_TYPE_OPTIONS, one_time_keyboard=True),
     )
     return ADD_TYPE
@@ -1657,7 +1729,8 @@ async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     
     await update.message.reply_text(
         "📊 *Financial Summary*\n\n"
-        "Choose the period you want to view:",
+        "Choose the period you want to view:\n\n"
+        "💡 Use /cancel to stop.",
         parse_mode="Markdown",
         reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
     )
@@ -2104,7 +2177,8 @@ async def delete_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     await update.message.reply_text(
         "🗑️ **Delete Entry**\n\n"
-        "Choose the period:",
+        "Choose the period:\n\n"
+        "💡 Use /cancel to stop.",
         parse_mode="Markdown",
         reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
     )
@@ -2311,7 +2385,8 @@ async def edit_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     
     await update.message.reply_text(
         "✏️ **Edit Entry**\n\n"
-        "Choose the period:",
+        "Choose the period:\n\n"
+        "💡 Use /cancel to stop.",
         parse_mode="Markdown",
         reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
     )
@@ -2699,7 +2774,7 @@ async def handle_edit_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel the conversation"""
     await update.message.reply_text(
-        "Operation cancelled.",
+        "Operation cancelled. Use /help to see all available commands.",
         reply_markup=ReplyKeyboardRemove(),
     )
     context.user_data.clear()
@@ -2890,6 +2965,9 @@ def main():
     
     # Help command handler
     application.add_handler(CommandHandler("help", help_command))
+    
+    # Categories command handler
+    application.add_handler(CommandHandler("categories", categories_command))
     
     # Unknown command handler - must be last
     application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
