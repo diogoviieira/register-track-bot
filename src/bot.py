@@ -1395,10 +1395,10 @@ async def show_entries_by_period(update: Update, context: ContextTypes.DEFAULT_T
 
 async def categories_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show all available categories and subcategories"""
-    message = "📂 *All Categories & Subcategories*\n\n"
+    message = "📂 All Categories & Subcategories\n\n"
     
     # Expense categories
-    message += "💸 *EXPENSES:*\n\n"
+    message += "💸 EXPENSES:\n\n"
     
     for category in ["Home", "Car", "Lazer", "Travel", "Needs", "Health", "Subscriptions", "Others"]:
         if category in SUBCATEGORIES:
@@ -1415,7 +1415,7 @@ async def categories_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             }
             
             emoji = category_emojis.get(category, "📌")
-            message += f"{emoji} *{category}*\n"
+            message += f"{emoji} {category}\n"
             
             # Get subcategories
             if category == "Subscriptions":
@@ -1432,8 +1432,8 @@ async def categories_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 message += "\n"
     
     # Income categories
-    message += "💵 *INCOMES:*\n\n"
-    message += "💰 *Incomes*\n"
+    message += "💵 INCOMES:\n\n"
+    message += "💰 Incomes\n"
     
     if "Incomes" in SUBCATEGORIES:
         subcats = SUBCATEGORIES["Incomes"]
@@ -1446,7 +1446,7 @@ async def categories_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     message += "\n💡 Use /add to create a new entry!"
     
-    await update.message.reply_text(message, parse_mode="Markdown")
+    await update.message.reply_text(message)
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
