@@ -1433,7 +1433,6 @@ async def categories_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     # Income categories
     message += "💵 INCOMES:\n\n"
-    message += "💰 Incomes\n"
     
     if "Incomes" in SUBCATEGORIES:
         subcats = SUBCATEGORIES["Incomes"]
@@ -1452,7 +1451,7 @@ async def categories_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show help message with all available commands"""
     await update.message.reply_text(
-        "🤖 **Finance Tracker Bot - Help**\n\n"
+        "🤖 **Finance Tracker - Help**\n\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         
         "✨ **GETTING STARTED**\n"
@@ -1479,8 +1478,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• Use /cancel anytime to stop\n"
         "• Commands guide you step-by-step\n"
         "• All data is saved automatically\n\n"
-        
-        "❓ Need help? Just ask!"
+
+        "Happy tracking! 📈💰",
     )
 
 
