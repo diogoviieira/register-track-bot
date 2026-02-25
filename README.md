@@ -81,52 +81,42 @@ python run_bot.py
 
 ## 📱 Commands
 
-### Daily Operations
+### Core Tracking
 
 | Command | Description |
 |---------|-------------|
-| `/add` | Log a new expense or income for today |
-| `/view` | View today's expenses (or `/view january`, `/view 2026`) |
-| `/summary` | 📊 **Interactive summary** (choose: today/day/month/year) |
-| `/edit` | Edit an expense from today |
-| `/delete` | Delete an expense from today |
+| `/add` | Add a new entry and choose type: Expenses, Invest, or Income |
+| `/categories` | Show all categories and subcategories |
 
-### Date-Specific Operations
+### View by Period
 
 | Command | Description |
 |---------|-------------|
-| `/add_d` | Add expense for a specific date |
-| `/view_d` | View expenses for a specific date |
-| `/edit_d` | Edit expense from a specific date |
-| `/delete_d` | Delete expense from a specific date |
+| `/expense` | View expenses only (today, specific day, month, year) |
+| `/invest` | View investments only (today, specific day, month, year) |
+| `/income` | View incomes only (today, specific day, month, year) |
+| `/summary` | View combined financial summary with Investido shown separately |
 
-### Search & Analytics
-
-| Command | Description |
-|---------|-------------|
-| `/search <category>` | Find all entries by category or subcategory |
-| `/stats` | 📊 View statistics: top categories, averages, all-time totals |
-
-### Quick Views by Period
+### Manage Entries
 
 | Command | Description |
 |---------|-------------|
-| `/expense <month>` | View expenses only for a month (e.g., `/expense january`) |
-| `/income <month>` | View income only for a month (e.g., `/income february`) |
-| `/month <name>` | Combined view: expenses + incomes + balance |
+| `/edit` | Edit an existing entry using period selection |
+| `/delete` | Delete an existing entry using period selection |
 
-### Reports
+### Search, Analytics & Reports
 
 | Command | Description |
 |---------|-------------|
-| `/summary` | 📊 Interactive summary with period selection |
-| `/pdf` | 📄 **Export PDF report** (week/month/year options) |
+| `/search <term>` | Search by category or subcategory across expenses, investments, and incomes |
+| `/stats` | Detailed statistics with expenses, investido, incomes, and all-time totals |
+| `/pdf` | Export PDF report (week/month/year) |
 
 ### Utility
 
 | Command | Description |
 |---------|-------------|
-| `/help` | Show all available commands |
+| `/help` | Show available commands |
 | `/cancel` | Cancel current operation |
 
 ---
@@ -138,16 +128,16 @@ python run_bot.py
 
 | Category | Subcategories |
 |----------|---------------|
-| 🏠 **Home** | Rent, Light, Water, Net, Groceries, Me Mimei, Other |
+| 🏠 **Home** | Rent, Light, Water, Net, Me Mimei, Other |
 | 🚗 **Car** | Fuel, Insurance, Maintenance, Parking, Via Verde, Other |
 | 🎉 **Lazer** | Dining Out, Movies/Shows, Hobbies, Coffees, Other |
 | ✈️ **Travel** | Flights, Hotels, Transportation, Food, Activities, Other |
-| 📺 **Streaming** | Prime, Netflix, Disney+, Crunchyroll |
-| 📱 **Subscriptions** | Patreon, iCloud, Spotify, F1 TV, Telemóvel, Other |
-| 🛒 **Needs** | Clothing, Personal Care, Other |
+| 📱 **Subscriptions** | Free text (custom subcategory name) |
+| 🛒 **Needs** | Groceries, Clothing, Personal Care, Other |
 | ⚕️ **Health** | Doctor, Pharmacy, Hospital_Urgency, Gym, Supplements, Other |
 | 🎁 **Others** | Gifts, Pet, Mi Mimei, Maomao, Other |
 | 💵 **Incomes** | Refeição, Subsídio, Bónus, Salary, Interest, Others |
+| 📈 **Invest** | XTB, GoParity, Poupança, Ajuntamento |
 
 </details>
 
@@ -169,6 +159,7 @@ Get financial summaries with flexible period selection:
 
 **Summary shows:**
 - 💸 Expenses by category with counts
+- 📈 Investido by category with counts (separate from expenses)
 - 💵 Incomes by category with counts
 - 📈 Balance (income - expenses)
 - Entry counts per category

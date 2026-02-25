@@ -1576,6 +1576,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🤖 **Finance Tracker - Help**\n\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
+        "🔑 **KEY TYPES**\n"
+        "• Expenses\n"
+        "• Invest\n"
+        "• Income\n\n"
         
         "✨ **GETTING STARTED**\n"
         "• /add → Add new expense, income or investment\n"
@@ -1589,8 +1593,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• /stats → Detailed statistics\n\n"
         
         "✏️ **MANAGE ENTRIES**\n"
-        "• /edit → Modify an entry\n"
-        "• /delete → Remove an entry\n"
+        "• /edit → Modify an entry (period-based)\n"
+        "• /delete → Remove an entry (period-based)\n"
         "• /search → Find by category\n"
         "  _Example: /search groceries_\n\n"
         
