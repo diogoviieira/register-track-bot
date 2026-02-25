@@ -88,7 +88,7 @@ MAX_SUBSCRIPTION = 50
 
 # Entry type selection
 ENTRY_TYPE_OPTIONS = [
-    ["Expenses", "Income"]
+    ["Expenses", "Income", "Invest"]
 ]
 
 # Main categories (expenses)
@@ -151,16 +151,14 @@ SUBCATEGORIES = {
         ["Refeição", "Subsídio"],
         ["Bónus", "Salary"],
         ["Interest", "Others"]
+    ],
+    "Invest": [
+        ["XTB", "GoParity"],
+        ["Poupança", "Ajuntamento"]
     ]
 }
 
-AUTO_DESCRIPTION = {
-    "Home": ["Rent", "Light", "Water", "Net"],
-    "Car": ["Fuel", "Insurance", "Via Verde"],
-    "Health": ["Doctor", "Pharmacy", "Gym", "Other"],
-    "Needs": ["Groceries"],
-    "Incomes": ["Refeição", "Subsídio", "Bónus", "Salary"]
-}
+DESCRIPTION_REQUIRED_CATEGORIES = {"Lazer", "Needs", "Others"}
 
 # Categories that require free-text subcategory input
 TEXT_SUBCATEGORY_CATEGORIES = {
@@ -168,16 +166,13 @@ TEXT_SUBCATEGORY_CATEGORIES = {
 }
 
 
-def should_skip_description(category: str, subcategory: str) -> bool:
-    """Check if description should be auto-filled for this category/subcategory"""
-    if category not in AUTO_DESCRIPTION:
-        return False
-    
-    auto_subs = AUTO_DESCRIPTION[category]
-    if auto_subs == "all":
+def should_require_description(category: str, subcategory: str) -> bool:
+    """Check if description is required for this category/subcategory"""
+    if category in DESCRIPTION_REQUIRED_CATEGORIES:
         return True
-    
-    return subcategory in auto_subs
+    if category == "Invest" and subcategory == "Ajuntamento":
+        return True
+    return False
 
 
 def get_today_date() -> str:
@@ -210,8 +205,12 @@ def get_db_connection():
 def format_success_message(category: str, subcategory: str, amount: float, description: str, target_date: str = None, is_income: bool = False) -> str:
     """Format a standardized success message for saved expenses/incomes"""
     date_msg = f" for {target_date}" if target_date else ""
-    entry_type = "Income" if is_income else "Expense"
-    emoji = "💵" if is_income else "💸"
+    if category == "Invest":
+        entry_type = "Investment"
+        emoji = "📈"
+    else:
+        entry_type = "Income" if is_income else "Expense"
+        emoji = "💵" if is_income else "💸"
     next_cmd = "/add" if not is_income else "/add"
     
     return (
@@ -285,13 +284,15 @@ def get_available_months(user_id: int) -> list:
     """Get list of months that have data for a user (from both expenses and incomes)"""
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        # Get unique year-month combinations from both tables
+        # Get unique year-month combinations from expenses, incomes and investments
         cursor.execute("""
             SELECT DISTINCT substr(date, 1, 7) as month FROM expenses WHERE user_id = ?
             UNION
             SELECT DISTINCT substr(date, 1, 7) as month FROM incomes WHERE user_id = ?
+            UNION
+            SELECT DISTINCT substr(date, 1, 7) as month FROM investments WHERE user_id = ?
             ORDER BY month DESC
-        """, (user_id, user_id))
+        """, (user_id, user_id, user_id))
         results = cursor.fetchall()
         return [row[0] for row in results]  # Returns list like ['2026-01', '2025-12', ...]
 
@@ -304,8 +305,10 @@ def get_available_years(user_id: int) -> list:
             SELECT DISTINCT substr(date, 1, 4) as year FROM expenses WHERE user_id = ?
             UNION
             SELECT DISTINCT substr(date, 1, 4) as year FROM incomes WHERE user_id = ?
+            UNION
+            SELECT DISTINCT substr(date, 1, 4) as year FROM investments WHERE user_id = ?
             ORDER BY year DESC
-        """, (user_id, user_id))
+        """, (user_id, user_id, user_id))
         results = cursor.fetchall()
         return [row[0] for row in results]  # Returns list like ['2026', '2025', ...]
 
@@ -737,19 +740,50 @@ def init_database():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        # Create investments table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS investments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                date TEXT NOT NULL,
+                time TEXT NOT NULL,
+                category TEXT NOT NULL,
+                subcategory TEXT NOT NULL,
+                amount REAL NOT NULL,
+                description TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         
         # Create indexes for better query performance
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_expenses_user_date ON expenses(user_id, date)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_incomes_user_date ON incomes(user_id, date)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_investments_user_date ON investments(user_id, date)")
+
+        # One-time migration: move legacy investment rows from expenses to investments
+        cursor.execute("""
+            INSERT INTO investments (user_id, date, time, category, subcategory, amount, description, created_at)
+            SELECT user_id, date, time, category, subcategory, amount, description, created_at
+            FROM expenses
+            WHERE category = 'Invest'
+        """)
+        cursor.execute("DELETE FROM expenses WHERE category = 'Invest'")
         
         logger.debug(f"Database initialized: {DB_FILE}")
 
 
 def save_expense(category: str, subcategory: str, amount: float, description: str, user_id: int, custom_date: str = None):
-    """Save expense or income to database for specific user"""
-    # Determine if this is an income or expense
+    """Save expense, income or investment to database for specific user"""
+    # Determine target table by category
     is_income = (category == "Incomes")
-    table = "incomes" if is_income else "expenses"
+    is_invest = (category == "Invest")
+    if is_income:
+        table = "incomes"
+    elif is_invest:
+        table = "investments"
+    else:
+        table = "expenses"
     
     try:
         if custom_date:
@@ -766,11 +800,11 @@ def save_expense(category: str, subcategory: str, amount: float, description: st
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (user_id, date_str, time_str, category, subcategory, amount, description))
             
-            entry_type = "income" if is_income else "expense"
+            entry_type = "income" if is_income else "investment" if is_invest else "expense"
             logger.debug(f"Saved {entry_type} for user {user_id}: {category} > {subcategory} - €{amount} on {date_str}")
             return True
     except Exception as e:
-        entry_type = "income" if is_income else "expense"
+        entry_type = "income" if is_income else "investment" if is_invest else "expense"
         logger.error(f"Error saving {entry_type}: {e}")
         return False
 
@@ -799,7 +833,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         search_term = parts[1].strip()
         
-        # Search in both expenses and incomes
+        # Search in expenses, investments and incomes
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
@@ -810,6 +844,14 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ORDER BY date DESC, time DESC
             """, (user_id, f"%{search_term}%", f"%{search_term}%"))
             expenses = cursor.fetchall()
+
+            # Search investments
+            cursor.execute("""
+                SELECT 'invest' as type, * FROM investments
+                WHERE user_id = ? AND (category LIKE ? OR subcategory LIKE ?)
+                ORDER BY date DESC, time DESC
+            """, (user_id, f"%{search_term}%", f"%{search_term}%"))
+            invests = cursor.fetchall()
             
             # Search incomes
             cursor.execute("""
@@ -819,7 +861,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             """, (user_id, f"%{search_term}%", f"%{search_term}%"))
             incomes = cursor.fetchall()
         
-        if not expenses and not incomes:
+        if not expenses and not incomes and not invests:
             await update.message.reply_text(
                 f"🔍 No results found for: **{search_term}**\n\n"
                 "Try searching with a different term.",
@@ -839,6 +881,16 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 expense_total += amount
                 message += f"• {exp['date']} | €{amount:.2f}\n"
             message += f"Total: €{expense_total:.2f}\n\n"
+
+        # Investments section
+        if invests:
+            invest_total = 0.0
+            message += "📈 **Investments:**\n"
+            for inv in invests:
+                amount = inv['amount']
+                invest_total += amount
+                message += f"• {inv['date']} | {inv['category']} > {inv['subcategory']}: €{amount:.2f}\n"
+            message += f"Total: €{invest_total:.2f}\n\n"
         
         # Incomes section
         if incomes:
@@ -943,15 +995,25 @@ async def generate_and_send_stats(update: Update, user_id: int, year_month: str)
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            # Get expense categories totals (this month)
+            # Get expense categories totals (this month, excluding investments)
             cursor.execute("""
                 SELECT category, subcategory, SUM(amount) as total, COUNT(*) as count
                 FROM expenses
-                WHERE user_id = ? AND date >= ? AND date <= ?
+                WHERE user_id = ? AND date >= ? AND date <= ? AND category != 'Invest'
                 GROUP BY category, subcategory
                 ORDER BY total DESC
             """, (user_id, start_date, end_date))
             expense_categories = cursor.fetchall()
+
+            # Get investment categories totals (this month)
+            cursor.execute("""
+                SELECT category, subcategory, SUM(amount) as total, COUNT(*) as count
+                FROM investments
+                WHERE user_id = ? AND date >= ? AND date <= ?
+                GROUP BY category, subcategory
+                ORDER BY total DESC
+            """, (user_id, start_date, end_date))
+            invest_categories = cursor.fetchall()
             
             # Get income categories totals (this month)
             cursor.execute("""
@@ -963,13 +1025,21 @@ async def generate_and_send_stats(update: Update, user_id: int, year_month: str)
             """, (user_id, start_date, end_date))
             income_categories = cursor.fetchall()
             
-            # Get all-time stats
+            # Get all-time stats (expenses excluding investments)
             cursor.execute("""
                 SELECT COUNT(*) as total_count, SUM(amount) as total_amount
                 FROM expenses
-                WHERE user_id = ?
+                WHERE user_id = ? AND category != 'Invest'
             """, (user_id,))
             expense_alltime = cursor.fetchone()
+
+            # Get all-time invested stats
+            cursor.execute("""
+                SELECT COUNT(*) as total_count, SUM(amount) as total_amount
+                FROM investments
+                WHERE user_id = ?
+            """, (user_id,))
+            invest_alltime = cursor.fetchone()
             
             cursor.execute("""
                 SELECT COUNT(*) as total_count, SUM(amount) as total_amount
@@ -985,10 +1055,12 @@ async def generate_and_send_stats(update: Update, user_id: int, year_month: str)
         # Month summary
         message += f"**{period}**\n"
         total_expense_month = sum(cat['total'] for cat in expense_categories) if expense_categories else 0
+        total_invest_month = sum(cat['total'] for cat in invest_categories) if invest_categories else 0
         total_income_month = sum(cat['total'] for cat in income_categories) if income_categories else 0
         balance_month = total_income_month - total_expense_month
         
         message += f"💸 Expenses: €{total_expense_month:.2f}\n"
+        message += f"📈 Investido: €{total_invest_month:.2f}\n"
         message += f"💵 Incomes: €{total_income_month:.2f}\n"
         message += f"📈 Balance: €{balance_month:.2f}\n\n"
         
@@ -1012,12 +1084,15 @@ async def generate_and_send_stats(update: Update, user_id: int, year_month: str)
         
         # All-time stats
         total_expense_alltime = expense_alltime['total_amount'] if expense_alltime['total_amount'] else 0
+        total_invest_alltime = invest_alltime['total_amount'] if invest_alltime['total_amount'] else 0
         total_income_alltime = income_alltime['total_amount'] if income_alltime['total_amount'] else 0
         count_expense_alltime = expense_alltime['total_count'] if expense_alltime['total_count'] else 0
+        count_invest_alltime = invest_alltime['total_count'] if invest_alltime['total_count'] else 0
         count_income_alltime = income_alltime['total_count'] if income_alltime['total_count'] else 0
         
         message += f"🌍 **All-Time**:\n"
         message += f"💸 Total expenses: €{total_expense_alltime:.2f} ({count_expense_alltime} entries)\n"
+        message += f"📈 Total investido: €{total_invest_alltime:.2f} ({count_invest_alltime} entries)\n"
         message += f"💵 Total incomes: €{total_income_alltime:.2f} ({count_income_alltime} entries)\n"
         message += f"📉 Net balance: €{total_income_alltime - total_expense_alltime:.2f}"
         
@@ -1050,10 +1125,32 @@ async def expense_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     return EXPENSE_PERIOD
 
 
+async def invest_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Start investment viewing with period selection"""
+    context.user_data.clear()
+    context.user_data["viewing_type"] = "invest"
+
+    keyboard = [
+        ["📅 Today", "📆 Specific Day"],
+        ["📊 Month", "📈 Year"],
+        ["❌ Cancel"]
+    ]
+
+    await update.message.reply_text(
+        "📈 **View Investments**\n\n"
+        "Choose the period:\n\n"
+        "💡 Use /cancel to stop.",
+        parse_mode="Markdown",
+        reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+    )
+    return EXPENSE_PERIOD
+
+
 async def handle_expense_period(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handle expense period selection"""
     choice = update.message.text.strip()
     user_id = update.effective_user.id
+    viewing_type = context.user_data.get("viewing_type", "expense")
     
     if "Cancel" in choice:
         await update.message.reply_text("❌ Cancelled.", reply_markup=ReplyKeyboardRemove())
@@ -1061,7 +1158,7 @@ async def handle_expense_period(update: Update, context: ContextTypes.DEFAULT_TY
     
     # Today - show immediately
     if "Today" in choice:
-        return await show_entries_by_period(update, context, "expense", "today")
+        return await show_entries_by_period(update, context, viewing_type, "today")
     
     # Specific Day - ask for date
     elif "Specific Day" in choice:
@@ -1136,6 +1233,7 @@ async def handle_expense_period(update: Update, context: ContextTypes.DEFAULT_TY
 async def handle_expense_day(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handle specific day for expense"""
     date_text = update.message.text.strip()
+    viewing_type = context.user_data.get("viewing_type", "expense")
     
     try:
         parsed_date = datetime.strptime(date_text, "%d/%m/%y")
@@ -1147,12 +1245,13 @@ async def handle_expense_day(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return EXPENSE_DAY
     
-    return await show_entries_by_period(update, context, "expense", "day", date_str)
+    return await show_entries_by_period(update, context, viewing_type, "day", date_str)
 
 
 async def handle_expense_month(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handle month selection for expense"""
     choice = update.message.text.strip()
+    viewing_type = context.user_data.get("viewing_type", "expense")
     
     if "Cancel" in choice:
         await update.message.reply_text("❌ Cancelled.", reply_markup=ReplyKeyboardRemove())
@@ -1167,12 +1266,13 @@ async def handle_expense_month(update: Update, context: ContextTypes.DEFAULT_TYP
         return ConversationHandler.END
     
     context.user_data.pop('month_mapping', None)
-    return await show_entries_by_period(update, context, "expense", "month", year_month)
+    return await show_entries_by_period(update, context, viewing_type, "month", year_month)
 
 
 async def handle_expense_year(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handle year selection for expense"""
     choice = update.message.text.strip()
+    viewing_type = context.user_data.get("viewing_type", "expense")
     
     if "Cancel" in choice:
         await update.message.reply_text("❌ Cancelled.", reply_markup=ReplyKeyboardRemove())
@@ -1184,7 +1284,7 @@ async def handle_expense_year(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("❌ Invalid year.")
         return ConversationHandler.END
     
-    return await show_entries_by_period(update, context, "expense", "year", year)
+    return await show_entries_by_period(update, context, viewing_type, "year", year)
 
 
 async def income_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1341,8 +1441,18 @@ async def handle_income_year(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def show_entries_by_period(update: Update, context: ContextTypes.DEFAULT_TYPE, entry_type: str, period_type: str, period_value: str = None) -> int:
     """Show entries for the specified period"""
     user_id = update.effective_user.id
-    table = "expenses" if entry_type == "expense" else "incomes"
-    emoji = "💸" if entry_type == "expense" else "💵"
+    if entry_type == "income":
+        table = "incomes"
+        emoji = "💵"
+        query_filter = ""
+    elif entry_type == "invest":
+        table = "investments"
+        emoji = "📈"
+        query_filter = ""
+    else:
+        table = "expenses"
+        emoji = "💸"
+        query_filter = ""
     
     try:
         # Determine date range
@@ -1363,7 +1473,7 @@ async def show_entries_by_period(update: Update, context: ContextTypes.DEFAULT_T
             cursor = conn.cursor()
             cursor.execute(f"""
                 SELECT * FROM {table}
-                WHERE user_id = ? AND date >= ? AND date <= ?
+                WHERE user_id = ? AND date >= ? AND date <= ?{query_filter}
                 ORDER BY date DESC, time DESC
             """, (user_id, start_date, end_date))
             entries = cursor.fetchall()
@@ -1378,7 +1488,8 @@ async def show_entries_by_period(update: Update, context: ContextTypes.DEFAULT_T
         
         # Build message
         total = sum(row['amount'] for row in entries)
-        message = f"{emoji} **{entry_type.capitalize()}s** ({start_date} to {end_date}):\n\n"
+        label = "Investments" if entry_type == "invest" else f"{entry_type.capitalize()}s"
+        message = f"{emoji} **{label}** ({start_date} to {end_date}):\n\n"
         
         for entry in entries:
             message += f"• {entry['date']} | {entry['category']} > {entry['subcategory']}: €{entry['amount']:.2f}\n"
@@ -1442,6 +1553,18 @@ async def categories_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         
         for sub in all_subs:
             message += f"   • {sub}\n"
+
+    # Investment categories
+    message += "\n📈 INVEST:\n\n"
+
+    if "Invest" in SUBCATEGORIES:
+        subcats = SUBCATEGORIES["Invest"]
+        all_subs = []
+        for row in subcats:
+            all_subs.extend(row)
+
+        for sub in all_subs:
+            message += f"   • {sub}\n"
     
     message += "\n💡 Use /add to create a new entry!"
     
@@ -1455,11 +1578,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "━━━━━━━━━━━━━━━━━━\n\n"
         
         "✨ **GETTING STARTED**\n"
-        "• /add → Add new expense or income\n"
+        "• /add → Add new expense, income or investment\n"
         "• /categories → See all categories\n\n"
         
         "📊 **VIEW YOUR DATA**\n"
         "• /expense → View expenses by period\n"
+        "• /invest → View investments by period\n"
         "• /income → View incomes by period\n"
         "• /summary → Financial summary\n"
         "• /stats → Detailed statistics\n\n"
@@ -1517,7 +1641,7 @@ async def add_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 
 async def handle_add_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handle entry type selection (Expenses or Income)"""
+    """Handle entry type selection (Expenses, Income or Invest)"""
     selection = update.message.text.strip()
     selection_lower = selection.lower()
 
@@ -1544,8 +1668,20 @@ async def handle_add_type(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         return SUBCATEGORY
 
+    if selection_lower in ["invest", "investment", "investments"]:
+        context.user_data["entry_type"] = "invest"
+        context.user_data["category"] = "Invest"
+        invest_keyboard = add_emoji_to_keyboard(SUBCATEGORIES["Invest"], "📈")
+        await update.message.reply_text(
+            "📈 **Add Investment**\n\n"
+            "Please select an investment category:",
+            parse_mode="Markdown",
+            reply_markup=ReplyKeyboardMarkup(invest_keyboard, one_time_keyboard=True),
+        )
+        return SUBCATEGORY
+
     await update.message.reply_text(
-        "Please choose Income or Expenses:",
+        "Please choose Income, Expenses or Invest:",
         reply_markup=ReplyKeyboardMarkup(ENTRY_TYPE_OPTIONS, one_time_keyboard=True),
     )
     return ADD_TYPE
@@ -1587,7 +1723,7 @@ async def category(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def subcategory(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Store subcategory and ask for amount"""
-    selected_subcategory = update.message.text.replace("💸 ", "").replace("💵 ", "").strip()
+    selected_subcategory = update.message.text.replace("💸 ", "").replace("💵 ", "").replace("📈 ", "").strip()
     category = context.user_data["category"]
     
     # Validate subscription length
@@ -1608,8 +1744,7 @@ async def subcategory(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     context.user_data["subcategory"] = selected_subcategory
     
     # Check if this category/subcategory should skip description
-    if should_skip_description(category, selected_subcategory):
-        context.user_data["skip_description"] = True
+    context.user_data["skip_description"] = not should_require_description(category, selected_subcategory)
     
     await update.message.reply_text(
         f"Subcategory: {selected_subcategory}\n\n"
@@ -1941,11 +2076,21 @@ async def generate_and_send_summary(update: Update, user_id: int, period_type: s
             cursor.execute("""
                 SELECT category, subcategory, SUM(amount) as total, COUNT(*) as count
                 FROM expenses
-                WHERE user_id = ? AND date >= ? AND date <= ?
+                WHERE user_id = ? AND date >= ? AND date <= ? AND category != 'Invest'
                 GROUP BY category, subcategory
                 ORDER BY category, subcategory
             """, (user_id, start_date, end_date))
             expense_totals = cursor.fetchall()
+
+            # Investments by category
+            cursor.execute("""
+                SELECT category, subcategory, SUM(amount) as total, COUNT(*) as count
+                FROM investments
+                WHERE user_id = ? AND date >= ? AND date <= ?
+                GROUP BY category, subcategory
+                ORDER BY category, subcategory
+            """, (user_id, start_date, end_date))
+            invest_totals = cursor.fetchall()
             
             # Incomes by category
             cursor.execute("""
@@ -1958,7 +2103,7 @@ async def generate_and_send_summary(update: Update, user_id: int, period_type: s
             income_totals = cursor.fetchall()
         
         # Check if there's any data
-        if not expense_totals and not income_totals:
+        if not expense_totals and not income_totals and not invest_totals:
             await update.message.reply_text(
                 f"📭 No records found for {period_name}.",
                 reply_markup=ReplyKeyboardRemove()
@@ -2001,6 +2146,23 @@ async def generate_and_send_summary(update: Update, user_id: int, period_type: s
         else:
             income_grand_total = 0.0
             message += "💵 *Incomes:* €0.00\n\n"
+
+        # Investments section (separate from expenses)
+        if invest_totals:
+            invested_grand_total = 0.0
+            invest_count = 0
+            message += "📈 *Investido:*\n"
+            for row in invest_totals:
+                cat_key = f"{row['category']} > {row['subcategory']}"
+                total = row['total']
+                count = row['count']
+                invested_grand_total += total
+                invest_count += count
+                message += f"  • {cat_key}: €{total:.2f} ({count})\n"
+            message += f"  📝 *Total Investido:* €{invested_grand_total:.2f} ({invest_count} entries)\n\n"
+        else:
+            invested_grand_total = 0.0
+            message += "📈 *Investido:* €0.00\n\n"
         
         # Balance
         balance = income_grand_total - expense_grand_total
@@ -2876,6 +3038,18 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel)],
         per_message=False,
     )
+
+    invest_handler = ConversationHandler(
+        entry_points=[CommandHandler("invest", invest_command)],
+        states={
+            EXPENSE_PERIOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_expense_period)],
+            EXPENSE_MONTH: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_expense_month)],
+            EXPENSE_YEAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_expense_year)],
+            EXPENSE_DAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_expense_day)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+        per_message=False,
+    )
     
     income_handler = ConversationHandler(
         entry_points=[CommandHandler("income", income_command)],
@@ -2917,6 +3091,7 @@ def main():
     )
     
     application.add_handler(expense_handler)
+    application.add_handler(invest_handler)
     application.add_handler(income_handler)
     application.add_handler(edit_handler)
     application.add_handler(delete_handler)
